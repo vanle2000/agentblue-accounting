@@ -86,6 +86,32 @@ cp .env.example .env
 
 The `.env` file is git-ignored and contains development-only credentials.
 
+### QuickBooks OAuth Configuration (optional)
+
+The QuickBooks integration requires OAuth credentials from the Intuit
+Developer Portal. Add these to your `.env` file:
+
+```
+QUICKBOOKS_CLIENT_ID=your-client-id
+QUICKBOOKS_CLIENT_SECRET=your-client-secret
+QUICKBOOKS_REDIRECT_URI=https://your-app.com/callback
+QUICKBOOKS_ENVIRONMENT=sandbox
+QUICKBOOKS_SCOPES=com.intuit.quickbooks.accounting
+QUICKBOOKS_STATE_SECRET=a-random-secret-for-state-signing
+```
+
+- `sandbox` uses the Intuit sandbox environment for testing.
+- `production` uses the live QuickBooks API.
+- All QuickBooks settings are optional until OAuth functionality is used.
+- Existing health endpoints and unrelated features work without
+  QuickBooks credentials.
+
+Run the QuickBooks tests:
+
+```bash
+pytest tests/unit/test_quickbooks_oauth.py -vv
+```
+
 ## Docker
 
 ### Build and start
@@ -396,6 +422,13 @@ agentblue-accounting/
 │       │   ├── session.py       # Async engine and session factory
 │       │   └── models/
 │       │       └── __init__.py  # Future models package
+│       ├── integrations/
+│       │   ├── __init__.py
+│       │   └── quickbooks/
+│       │       ├── __init__.py
+│       │       ├── config.py    # OAuth settings
+│       │       ├── exceptions.py
+│       │       └── oauth.py     # Authorization URL generation
 │       └── logging.py           # structlog configuration
 ├── migrations/
 │   ├── env.py                   # Alembic async environment

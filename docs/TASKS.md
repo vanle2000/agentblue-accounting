@@ -49,7 +49,6 @@
 
 ### Stage 3A: QuickBooks OAuth Configuration and Authorization URL
 
-Scope:
 - Define QuickBooks OAuth configuration using pydantic-settings.
 - Add placeholder variables to `.env.example`.
 - Validate required configuration at startup.
@@ -58,17 +57,7 @@ Scope:
 - Add unit tests using fake credentials.
 - Document the authorization flow.
 
-Explicitly excluded:
-- Authorization-code exchange.
-- Token persistence and refresh.
-- Transaction synchronization.
-- Chart of Accounts synchronization.
-- Transaction categorization.
-- QuickBooks write operations.
-- Machine learning or LLM integration.
-- Browser automation.
-
-### Future Stages
+## Pending
 
 - Stage 3B: QuickBooks Token Exchange and Storage.
 - Stage 3C: QuickBooks Transaction Sync.
