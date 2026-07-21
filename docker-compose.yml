@@ -1,0 +1,49 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: agentblue-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: agentblue
+      POSTGRES_PASSWORD: agentblue
+      POSTGRES_DB: agentblue_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - agentblue-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentblue -d agentblue_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agentblue-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: development
+      LOG_LEVEL: INFO
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: agentblue
+      DB_PASSWORD: agentblue
+      DB_NAME: agentblue_dev
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  agentblue-pgdata:
+    name: agentblue-pgdata

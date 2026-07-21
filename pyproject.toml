@@ -1,0 +1,115 @@
+[project]
+name = "agentblue-accounting"
+version = "0.1.0"
+description = "Agent Blue Accounting - modular monolith for property management accounting"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115.0,<0.116.0",
+    "uvicorn[standard]>=0.34.0,<0.35.0",
+    "pydantic>=2.11.0,<3.0.0",
+    "pydantic-settings>=2.9.0,<3.0.0",
+    "sqlalchemy[asyncio]>=2.0.41,<2.1.0",
+    "asyncpg>=0.30.0,<0.31.0",
+    "alembic>=1.15.0,<1.16.0",
+    "structlog>=25.0.0,<26.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0,<9.0.0",
+    "pytest-asyncio>=0.26.0,<0.27.0",
+    "pytest-cov>=6.0.0,<7.0.0",
+    "httpx>=0.28.0,<0.29.0",
+    "ruff>=0.11.0,<0.12.0",
+    "mypy>=1.15.0,<1.16.0",
+    "pre-commit>=4.0.0,<5.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=75.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["app"]
+
+# ---------------------------------------------------------------------------
+# Ruff
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py312"
+line-length = 99
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "TC003",   # typing imports in function bodies are acceptable for readability
+    "TC002",   # moving runtime imports into TYPE_CHECKING breaks FastAPI/pytest
+    "B008",    # FastAPI Depends() in default args is the standard pattern
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agentblue"]
+
+# ---------------------------------------------------------------------------
+# mypy
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "app"
+explicit_package_bases = true
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["alembic.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "unit: unit tests (no external dependencies)",
+    "integration: integration tests (requires PostgreSQL via Docker Compose)",
+]
+addopts = [
+    "--strict-markers",
+    "--tb=short",
+    "-v",
+]
+
+[tool.coverage.run]
+source = ["agentblue"]
+omit = ["*/tests/*", "*/migrations/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__",
+    "\\.\\.\\.",
+]

@@ -1,0 +1,12 @@
+# Development overrides -- auto-merged by docker compose on top of docker-compose.yml.
+# Hot-reload: edit Python files on the host; Uvicorn detects changes automatically.
+# Rebuild only required when pyproject.toml, Dockerfile, or system packages change.
+# To skip this override (e.g. in CI): docker compose -f docker-compose.yml up -d
+
+services:
+  api:
+    volumes:
+      - ./app:/app/app
+      - ./migrations:/app/migrations
+    command: ["uvicorn", "agentblue.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    restart: "no"

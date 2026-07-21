@@ -1,0 +1,29 @@
+# Ensure consistent line endings across Windows and Linux/Docker
+* text=auto
+
+# Code files: always LF
+*.py text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.ini text eol=lf
+*.mako text eol=lf
+*.cfg text eol=lf
+*.sh text eol=lf
+Dockerfile text eol=lf
+Makefile text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+.pre-commit-config.yaml text eol=lf
+
+# Windows scripts: CRLF
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
