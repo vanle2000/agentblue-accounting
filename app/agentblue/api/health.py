@@ -53,6 +53,6 @@ async def ready(
         await session.execute(text("SELECT 1"))
         return ReadinessResponse()
     except Exception:
-        logger.error("readiness_check_failed", event="db_unreachable")
+        logger.error("readiness_check_failed", reason="db_unreachable")
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return ReadinessResponse(status="error", database="unavailable")

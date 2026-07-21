@@ -260,12 +260,93 @@ make migrate          # alembic upgrade head
 make migration MSG="add users table"  # alembic revision --autogenerate
 ```
 
+## Developer Task Runner
+
+The project includes a cross-platform task runner with three entry points.
+
+### PowerShell (Windows, no installation required)
+
+```powershell
+.\scripts\dev.ps1 help
+.\scripts\dev.ps1 doctor
+.\scripts\dev.ps1 verify
+.\scripts\dev.ps1 test
+.\scripts\dev.ps1 test-unit
+.\scripts\dev.ps1 test-integration
+.\scripts\dev.ps1 test-fast
+.\scripts\dev.ps1 lint
+.\scripts\dev.ps1 lint-fix
+.\scripts\dev.ps1 format
+.\scripts\dev.ps1 format-check
+.\scripts\dev.ps1 typecheck
+.\scripts\dev.ps1 setup
+.\scripts\dev.ps1 docker-up
+.\scripts\dev.ps1 docker-down
+.\scripts\dev.ps1 docker-ps
+.\scripts\dev.ps1 docker-logs
+.\scripts\dev.ps1 health
+.\scripts\dev.ps1 status
+.\scripts\dev.ps1 clean
+```
+
+### just (cross-platform, requires installation)
+
+Install `just` from https://github.com/casey/just:
+
+```powershell
+winget install Casey.Just     # Windows
+brew install just              # macOS
+cargo install just             # Any platform with Rust
+```
+
+Then use:
+
+```bash
+just help
+just doctor
+just verify
+just test
+just test-unit
+just test-integration
+just test-fast
+just lint
+just lint-fix
+just format
+just format-check
+just typecheck
+just setup
+just docker-up
+just docker-down
+just docker-ps
+just docker-logs
+just health
+just status
+just clean
+```
+
+### Environment Doctor
+
+The `doctor` command diagnoses the development environment in a single
+pass. It checks Python, dependencies, Git, Docker, environment variables,
+database connectivity, and API endpoints without modifying anything.
+
+```powershell
+python scripts\doctor.py             # Full diagnostic
+python scripts\doctor.py --check python  # Single category
+python scripts\doctor.py --json      # Machine-readable output
+```
+
+Categories: `system`, `project`, `python`, `dependencies`, `git`,
+`docker`, `environment`, `database`, `endpoints`, `known-issues`.
+
 ## Common troubleshooting
 
 ### Port 5432 already in use
 
-Another PostgreSQL instance may be running. Stop it or change `DB_PORT`
-in `.env` and `docker-compose.yml`.
+Another PostgreSQL instance may be running. The default `docker-compose.yml`
+maps to host port 5433 to avoid conflicts with a native PostgreSQL on 5432.
+If you need a different port, change `DB_PORT` in `.env` and the port mapping
+in `docker-compose.yml`.
 
 ### Port 8000 already in use
 
@@ -331,13 +412,16 @@ agentblue-accounting/
 │   └── adr/
 │       └── 0001-initial-architecture.md
 ├── scripts/
+│   ├── dev.ps1              # PowerShell task runner
+│   └── doctor.py            # Environment diagnostic tool
 ├── .env.example
 ├── .gitignore
 ├── .gitattributes
 ├── .pre-commit-config.yaml
-├── alembic.ini
 ├── docker-compose.yml
+├── docker-compose.override.yml
 ├── Dockerfile
+├── Justfile
 ├── Makefile
 ├── pyproject.toml
 └── README.md
