@@ -122,6 +122,22 @@ pytest tests/unit/test_quickbooks_oauth.py tests/unit/test_quickbooks_callback.p
 Tokens are never exposed in endpoint responses. The callback returns
 only `realm_id`, `token_type`, and `expires_in`.
 
+### QuickBooks API Client (Stage 4)
+
+The authenticated API client (`api_client.py`) provides:
+- Automatic Bearer token authentication
+- Automatic token refresh on expiry and 401
+- Retry with exponential backoff for transient failures (500, 502, 503, 504, timeouts)
+- Rate limiting with Retry-After header support
+- Pagination via STARTPOSITION/MAXRESULTS
+- Structured error mapping to domain exceptions
+
+Run all QuickBooks tests:
+
+```bash
+pytest tests/unit/test_quickbooks_*.py -vv
+```
+
 ## Docker
 
 ### Build and start

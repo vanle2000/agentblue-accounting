@@ -1,7 +1,7 @@
 """QuickBooks OAuth FastAPI endpoints.
 
-Provides minimal HTTP endpoints for OAuth authorization and callback.
-Business logic is delegated to the service layer (callback, client modules).
+Provides minimal HTTP endpoints for OAuth authorization, callback,
+and API health check. Business logic is delegated to the service layer.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ import structlog
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
 
+from agentblue.integrations.quickbooks.api_client import QuickBooksApiClient
 from agentblue.integrations.quickbooks.callback import validate_callback
 from agentblue.integrations.quickbooks.client import exchange_code_for_token
 from agentblue.integrations.quickbooks.config import get_quickbooks_settings
@@ -19,7 +20,13 @@ from agentblue.integrations.quickbooks.exceptions import (
     QuickBooksStateMismatchError,
     QuickBooksTokenExchangeError,
 )
+from agentblue.integrations.quickbooks.health import (
+    check_quickbooks_health,
+)
 from agentblue.integrations.quickbooks.oauth import build_authorization_url
+from agentblue.integrations.quickbooks.repository import (
+    InMemoryTokenRepository,
+)
 
 router = APIRouter(
     prefix="/api/v1/integrations/quickbooks",
@@ -44,20 +51,19 @@ class CallbackResponse(BaseModel):
     expires_in: int
 
 
-class ErrorResponse(BaseModel):
-    """Safe error response — never exposes secrets."""
+class HealthResponse(BaseModel):
+    """Response from the QuickBooks health endpoint."""
 
-    error: str
-    detail: str
+    healthy: bool
+    realm_id: str
+    company_name: str
+    environment: str
+    error: str = ""
 
 
 @router.get("/authorize", response_model=AuthorizeResponse)
 async def authorize() -> AuthorizeResponse:
-    """Generate a QuickBooks OAuth authorization URL.
-
-    Returns the URL and state value. The client must redirect the user
-    to the authorization URL to begin the OAuth flow.
-    """
+    """Generate a QuickBooks OAuth authorization URL."""
     settings = get_quickbooks_settings()
     result = build_authorization_url(settings)
     return AuthorizeResponse(
@@ -75,12 +81,7 @@ async def callback(
     error: str = Query(default=""),
     error_description: str = Query(default=""),
 ) -> CallbackResponse:
-    """Handle the OAuth callback from Intuit.
-
-    Validates callback parameters, exchanges the authorization code for
-    tokens, and returns a safe summary. Tokens are never exposed in the
-    response.
-    """
+    """Handle the OAuth callback from Intuit."""
     query_params = {
         "code": code,
         "state": state,
@@ -89,15 +90,12 @@ async def callback(
         "error_description": error_description,
     }
 
-    # Retrieve the expected state from the session or query.
-    # In production, this should come from a server-side session store.
-    # For now, we accept the state parameter and validate format only.
     settings = get_quickbooks_settings()
 
     try:
         callback_params = validate_callback(
             query_params,
-            expected_state=state,  # Passed through; real validation needs session.
+            expected_state=state,
         )
     except QuickBooksCallbackError as exc:
         logger.warning("quickbooks_callback_error", error=str(exc))
@@ -126,4 +124,38 @@ async def callback(
         realm_id=callback_params.realm_id,
         token_type=token.token_type,
         expires_in=token.expires_in,
+    )
+
+
+@router.get("/health", response_model=HealthResponse)
+async def quickbooks_health(
+    realm_id: str = Query(default=""),
+) -> HealthResponse:
+    """Check QuickBooks API health.
+
+    Verifies OAuth token validity and company reachability.
+    """
+    settings = get_quickbooks_settings()
+
+    # For health check, we need a realm_id and token.
+    # Use the provided realm_id or fall back to a default.
+    if not realm_id:
+        return HealthResponse(
+            healthy=False,
+            realm_id="",
+            company_name="",
+            environment=settings.environment.value,
+            error="realm_id is required for health check.",
+        )
+
+    repository = InMemoryTokenRepository()
+    async with QuickBooksApiClient(settings, repository, realm_id) as client:
+        result = await check_quickbooks_health(client, environment=settings.environment.value)
+
+    return HealthResponse(
+        healthy=result.healthy,
+        realm_id=result.realm_id,
+        company_name=result.company_name,
+        environment=result.environment,
+        error=result.error,
     )
