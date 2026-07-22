@@ -51,11 +51,11 @@ The architecture must support future expansion.
 
 ## Current Milestone
 
-Stage 4: Production QuickBooks API Client (implemented).
+Stage 5: QuickBooks Transaction Synchronization (implemented).
 
 ## Next Milestone
 
-Stage 5: QuickBooks Transaction Sync.
+Stage 6: Chart of Accounts and accounting context.
 
 ## Known Infrastructure Issues
 

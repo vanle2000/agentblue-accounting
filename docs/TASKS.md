@@ -82,9 +82,26 @@
 - Add 28 new unit tests with mocked HTTP.
 - Document API client architecture and retry strategy.
 
+### Stage 5: QuickBooks Transaction Synchronization
+
+- Implement entity registry for all 12 supported transaction types.
+- Implement normalization adapters for Purchase, Deposit, Transfer,
+  JournalEntry, Bill, BillPayment, Payment, SalesReceipt, RefundReceipt,
+  CreditMemo, VendorCredit, Invoice.
+- Implement source snapshot, canonical transaction, and transaction line
+  persistence with idempotent upserts.
+- Implement sync checkpoint with optimistic concurrency.
+- Implement backfill service using paginated Query API.
+- Implement incremental CDC sync with overlap windows and window splitting.
+- Implement sync run audit trail with per-entity result tracking.
+- Add Alembic migration for 6 new tables.
+- Add FastAPI sync endpoints (backfill, incremental, status).
+- Add 37 unit tests covering registry, normalization, query builder,
+  sync service, deletion handling, and security.
+
 ## Pending
 
-- Stage 5: QuickBooks Transaction Sync.
+- Stage 6: Chart of Accounts and accounting context.
 - Stage 3D: Transaction Categorization Agent.
 - Buildium Integration Agent.
 - Vendor Management Agent.

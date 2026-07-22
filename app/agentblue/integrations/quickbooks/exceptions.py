@@ -108,3 +108,46 @@ class QuickBooksServerError(QuickBooksApiError):
 
 class QuickBooksTransportError(QuickBooksApiError):
     """Raised on network/timeout errors reaching the API."""
+
+
+# --- Stage 5: Sync exceptions ---
+
+
+class QuickBooksSyncError(QuickBooksError):
+    """Raised when a sync operation fails."""
+
+
+class QuickBooksBackfillError(QuickBooksSyncError):
+    """Raised when an initial backfill operation fails."""
+
+
+class QuickBooksIncrementalSyncError(QuickBooksSyncError):
+    """Raised when an incremental CDC sync fails."""
+
+
+class QuickBooksUnsupportedEntityError(QuickBooksSyncError):
+    """Raised when an unsupported entity type is requested."""
+
+
+class QuickBooksQueryConstructionError(QuickBooksSyncError):
+    """Raised when a QuickBooks query cannot be safely constructed."""
+
+
+class QuickBooksNormalizationError(QuickBooksSyncError):
+    """Raised when a source record cannot be normalized."""
+
+
+class QuickBooksPersistenceError(QuickBooksSyncError):
+    """Raised when database persistence of sync data fails."""
+
+
+class QuickBooksCheckpointError(QuickBooksSyncError):
+    """Raised when checkpoint operations fail."""
+
+
+class QuickBooksSyncConflictError(QuickBooksSyncError):
+    """Raised when a concurrent sync conflict is detected."""
+
+
+class QuickBooksCdcWindowError(QuickBooksSyncError):
+    """Raised when a CDC window cannot be split further."""
