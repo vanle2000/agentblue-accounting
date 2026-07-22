@@ -115,9 +115,22 @@
 - Add FastAPI accounting context endpoints.
 - Add 19 unit tests covering normalization, validation, usage, and security.
 
+### Stage 7: Intelligent Transaction Categorization
+
+- Implement vendor and text normalization (Unicode, legal suffixes, processor prefixes).
+- Implement deterministic rule engine (vendor, keyword, amount, composite rules).
+- Implement scoring model with configurable confidence thresholds.
+- Implement categorization engine with rule evaluation and candidate ranking.
+- Implement human review workflow (approve, change, reject, defer).
+- Implement training label capture for future ML.
+- Add categorization ORM models (7 tables).
+- Add Alembic migration for categorization schema.
+- Add FastAPI categorization endpoints.
+- Add 31 unit tests covering normalization, rules, scoring, and security.
+
 ## Pending
 
-- Stage 7: Transaction categorization engine.
+- Stage 8: ML-assisted categorization.
 - Stage 3D: Transaction Categorization Agent.
 - Buildium Integration Agent.
 - Vendor Management Agent.

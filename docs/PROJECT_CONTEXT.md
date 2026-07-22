@@ -51,11 +51,11 @@ The architecture must support future expansion.
 
 ## Current Milestone
 
-Stage 6: QuickBooks Chart of Accounts and Accounting Context (implemented).
+Stage 7: Intelligent Transaction Categorization (implemented).
 
 ## Next Milestone
 
-Stage 7: Transaction categorization engine.
+Stage 8: ML-assisted categorization.
 
 ## Known Infrastructure Issues
 

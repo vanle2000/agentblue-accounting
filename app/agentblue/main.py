@@ -9,6 +9,9 @@ import structlog
 from fastapi import FastAPI
 
 from agentblue.api.health import router as health_router
+from agentblue.categorization.router import (
+    router as categorization_router,
+)
 from agentblue.config import get_settings
 from agentblue.db.session import dispose_engine
 from agentblue.integrations.quickbooks.accounting.router import (
@@ -62,6 +65,7 @@ def create_app() -> FastAPI:
     app.include_router(quickbooks_router)
     app.include_router(quickbooks_sync_router)
     app.include_router(quickbooks_accounting_router)
+    app.include_router(categorization_router)
     return app
 
 

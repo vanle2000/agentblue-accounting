@@ -11,6 +11,15 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from agentblue.config import get_settings
 from agentblue.db.base import Base
+from agentblue.categorization.models import (  # noqa: F401
+    CategorizationDecision,
+    CategorizationRecommendation,
+    CategorizationRule,
+    CategorizationRun,
+    CategorizationTrainingLabel,
+    TransactionCategorization,
+    VendorMapping,
+)
 from agentblue.db.models.quickbooks_accounting import (  # noqa: F401
     QuickBooksAccount,
     QuickBooksAccountSourceSnapshot,
