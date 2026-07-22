@@ -59,6 +59,9 @@ ignore = [
     "B008",    # FastAPI Depends() in default args is the standard pattern
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"migrations/**" = ["E501", "I001"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["agentblue"]
 

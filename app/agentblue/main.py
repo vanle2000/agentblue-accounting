@@ -14,6 +14,9 @@ from agentblue.db.session import dispose_engine
 from agentblue.integrations.quickbooks.router import (
     router as quickbooks_router,
 )
+from agentblue.integrations.quickbooks.sync.router import (
+    router as quickbooks_sync_router,
+)
 from agentblue.logging import configure_logging
 
 
@@ -54,6 +57,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(health_router)
     app.include_router(quickbooks_router)
+    app.include_router(quickbooks_sync_router)
     return app
 
 

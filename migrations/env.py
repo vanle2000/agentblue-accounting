@@ -11,9 +11,16 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from agentblue.config import get_settings
 from agentblue.db.base import Base
+from agentblue.db.models.quickbooks_sync import (  # noqa: F401
+    QuickBooksSourceSnapshot,
+    QuickBooksSyncCheckpoint,
+    QuickBooksSyncRun,
+    QuickBooksSyncRunEntity,
+    QuickBooksTransaction,
+    QuickBooksTransactionLine,
+)
 
 # Import all models here so Alembic can detect them.
-# Stage 1 has no models yet; this import prepares the metadata for future use.
 target_metadata = Base.metadata
 
 config = context.config

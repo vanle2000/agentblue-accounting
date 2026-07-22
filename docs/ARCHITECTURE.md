@@ -178,6 +178,65 @@ app/agentblue/integrations/
 - `health.py`: Lightweight health check verifying token validity and
   company reachability via the QuickBooks API.
 
+### Sync Subsystem (Stage 5)
+
+The sync subsystem lives in `app/agentblue/integrations/quickbooks/sync/`.
+
+#### Entity Registry
+
+- Central registry maps each `EntityType` to its QuickBooks API name,
+  query behavior, and normalization adapter.
+- All 12 supported transaction entities are registered.
+- Adding a new entity requires only a normalizer class + registry entry.
+- No if/elif chains; uses adapter/strategy pattern.
+
+#### Supported Entities (all implemented)
+
+Purchase, Deposit, Transfer, JournalEntry, Bill, BillPayment,
+Payment, SalesReceipt, RefundReceipt, CreditMemo, VendorCredit, Invoice.
+
+#### Backfill
+
+- Uses paginated Query API via Stage 4 client.
+- Accepts entity types, start date, optional end date.
+- Idempotent upserts: same payload hash = UNCHANGED.
+- Checkpoints advance only after successful database commit.
+
+#### Incremental CDC
+
+- Uses QuickBooks Change Data Capture endpoint.
+- 30-day lookback limit enforced.
+- Overlap window (configurable, default 5 min) absorbs boundary duplicates.
+- Window splitting: when response nears 1000-object CDC limit,
+  recursively splits into smaller windows (max depth: 10).
+- Minimum window: 1 hour. Cannot loop forever.
+
+#### Checkpoint Strategy
+
+- One checkpoint per realm + entity type + sync mode.
+- Optimistic concurrency via checkpoint_version.
+- SELECT FOR UPDATE prevents concurrent advancement.
+- Monotonic: never moves backward.
+
+#### Idempotency
+
+- Source identity: realm_id + entity_type + quickbooks_id.
+- Payload hash detects changes.
+- Same page replayed = no duplicates.
+- Lines replaced in one database transaction.
+
+#### Deletion Handling
+
+- CDC deleted entities: source_status = "deleted", source_deleted = true.
+- No physical deletion of audit data.
+- Repeated deletion events are idempotent.
+
+#### Concurrency
+
+- SELECT FOR UPDATE on checkpoint rows.
+- Remote HTTP calls never inside database transactions.
+- Fetch page, then persist in bounded DB transaction.
+
 ### Deferred
 
 - Production token persistence with encryption.
