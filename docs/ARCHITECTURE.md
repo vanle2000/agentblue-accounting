@@ -112,3 +112,37 @@ Client -> FastAPI -> Router -> Depends(get_db) -> AsyncSession -> PostgreSQL
   fixtures.
 - Dependency override: integration failure tests override `get_db` with
   a broken session to test error handling deterministically.
+
+## QuickBooks Integration Module
+
+```
+app/agentblue/integrations/
+  __init__.py
+  quickbooks/
+    __init__.py
+    config.py         # OAuth settings (pydantic-settings, SecretStr)
+    exceptions.py     # QuickBooksConfigurationError, QuickBooksOAuthError
+    oauth.py          # Authorization URL generation, state handling
+```
+
+### Module Responsibilities
+
+- `config.py`: Loads QuickBooks OAuth settings from environment
+  variables. Validates required fields, normalizes scopes, maps
+  sandbox/production to Intuit endpoints. Uses SecretStr for
+  sensitive fields.
+- `exceptions.py`: Domain-specific exceptions with actionable messages
+  that never expose secret values.
+- `oauth.py`: Generates cryptographically secure state values and
+  builds Intuit OAuth2 authorization URLs. Pure functions, no global
+  mutable state. State persistence and callback validation are
+  deferred to Stage 3B.
+
+### Security Design
+
+- Sensitive fields use `SecretStr` to prevent accidental exposure.
+- Validation error messages identify missing settings by environment
+  variable name, never by value.
+- Authorization URLs never include the client secret.
+- State values use `secrets.token_urlsafe(32)` for 256 bits of entropy.
+- No secrets appear in logs, repr output, or test assertions.
