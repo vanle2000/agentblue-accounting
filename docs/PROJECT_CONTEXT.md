@@ -51,11 +51,11 @@ The architecture must support future expansion.
 
 ## Current Milestone
 
-Stage 5: QuickBooks Transaction Synchronization (implemented).
+Stage 6: QuickBooks Chart of Accounts and Accounting Context (implemented).
 
 ## Next Milestone
 
-Stage 6: Chart of Accounts and accounting context.
+Stage 7: Transaction categorization engine.
 
 ## Known Infrastructure Issues
 

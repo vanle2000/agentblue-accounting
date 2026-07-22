@@ -99,9 +99,25 @@
 - Add 37 unit tests covering registry, normalization, query builder,
   sync service, deletion handling, and security.
 
+### Stage 6: QuickBooks Chart of Accounts and Accounting Context
+
+- Implement Account source snapshot persistence.
+- Implement canonical Account persistence with full field mapping.
+- Implement Account normalization with safe Decimal handling.
+- Implement parent/subaccount hierarchy resolution.
+- Implement account validation service.
+- Implement account candidate filtering service.
+- Implement account usage evaluation service.
+- Implement transaction account-reference resolution.
+- Implement Account backfill via paginated Query API.
+- Implement Account incremental CDC sync.
+- Add Alembic migration for 3 new tables.
+- Add FastAPI accounting context endpoints.
+- Add 19 unit tests covering normalization, validation, usage, and security.
+
 ## Pending
 
-- Stage 6: Chart of Accounts and accounting context.
+- Stage 7: Transaction categorization engine.
 - Stage 3D: Transaction Categorization Agent.
 - Buildium Integration Agent.
 - Vendor Management Agent.

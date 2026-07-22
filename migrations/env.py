@@ -11,6 +11,11 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from agentblue.config import get_settings
 from agentblue.db.base import Base
+from agentblue.db.models.quickbooks_accounting import (  # noqa: F401
+    QuickBooksAccount,
+    QuickBooksAccountSourceSnapshot,
+    QuickBooksTransactionAccountRef,
+)
 from agentblue.db.models.quickbooks_sync import (  # noqa: F401
     QuickBooksSourceSnapshot,
     QuickBooksSyncCheckpoint,
