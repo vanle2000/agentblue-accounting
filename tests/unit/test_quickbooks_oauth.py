@@ -15,7 +15,6 @@ from agentblue.integrations.quickbooks.config import (
 )
 from agentblue.integrations.quickbooks.exceptions import (
     QuickBooksConfigurationError,
-    QuickBooksOAuthError,
 )
 from agentblue.integrations.quickbooks.oauth import (
     AuthorizationResult,
@@ -32,7 +31,6 @@ pytestmark = pytest.mark.unit
 _FAKE_CLIENT_ID = "fake-client-id-12345"
 _FAKE_CLIENT_SECRET = "fake-client-secret-67890"
 _FAKE_REDIRECT_URI = "https://localhost:8000/callback"
-_FAKE_STATE_SECRET = "fake-state-secret-abcdef"
 
 
 def _make_settings(**overrides: object) -> QuickBooksOAuthSettings:
@@ -43,7 +41,6 @@ def _make_settings(**overrides: object) -> QuickBooksOAuthSettings:
         "redirect_uri": _FAKE_REDIRECT_URI,
         "environment": "sandbox",
         "scopes": "com.intuit.quickbooks.accounting",
-        "state_secret": _FAKE_STATE_SECRET,
     }
     defaults.update(overrides)
     return QuickBooksOAuthSettings(**defaults)  # type: ignore[arg-type]
@@ -97,11 +94,6 @@ class TestConfigurationValidation:
         with pytest.raises(QuickBooksConfigurationError, match="QUICKBOOKS_REDIRECT_URI"):
             settings.validate_for_oauth()
 
-    def test_missing_state_secret_rejected(self) -> None:
-        settings = _make_settings(state_secret="")
-        with pytest.raises(QuickBooksConfigurationError, match="QUICKBOOKS_STATE_SECRET"):
-            settings.validate_for_oauth()
-
     def test_valid_config_passes(self) -> None:
         settings = _make_settings()
         settings.validate_for_oauth()  # must not raise
@@ -114,7 +106,6 @@ class TestConfigurationValidation:
         assert "QUICKBOOKS_CLIENT_ID" in msg
         assert "QUICKBOOKS_CLIENT_SECRET" in msg
         assert "QUICKBOOKS_REDIRECT_URI" in msg
-        assert "QUICKBOOKS_STATE_SECRET" in msg
 
 
 # ---------------------------------------------------------------------------
@@ -123,24 +114,44 @@ class TestConfigurationValidation:
 
 
 class TestRedirectUriValidation:
-    """Test redirect URI format validation."""
+    """Test redirect URI format validation with structured URL parsing."""
 
     def test_https_uri_accepted(self) -> None:
         settings = _make_settings(redirect_uri="https://example.com/callback")
         assert settings.redirect_uri == "https://example.com/callback"
 
-    def test_http_uri_accepted(self) -> None:
+    def test_http_localhost_accepted(self) -> None:
         settings = _make_settings(redirect_uri="http://localhost:8000/callback")
         assert settings.redirect_uri == "http://localhost:8000/callback"
 
+    def test_http_uri_accepted(self) -> None:
+        settings = _make_settings(redirect_uri="http://example.com/callback")
+        assert settings.redirect_uri == "http://example.com/callback"
+
     def test_invalid_scheme_rejected(self) -> None:
-        with pytest.raises(ValidationError, match="http"):
+        with pytest.raises(ValidationError, match="scheme"):
             _make_settings(redirect_uri="ftp://example.com/callback")
 
-    def test_empty_uri_accepted(self) -> None:
+    def test_no_scheme_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="scheme"):
+            _make_settings(redirect_uri="example.com/callback")
+
+    def test_no_hostname_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="hostname"):
+            _make_settings(redirect_uri="https:///callback")
+
+    def test_whitespace_only_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            _make_settings(redirect_uri="   ")
+
+    def test_empty_uri_accepted_at_construction(self) -> None:
         # Empty is allowed at construction; validate_for_oauth catches it.
         settings = _make_settings(redirect_uri="")
         assert settings.redirect_uri == ""
+
+    def test_leading_trailing_whitespace_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="whitespace"):
+            _make_settings(redirect_uri="  https://example.com/callback  ")
 
 
 # ---------------------------------------------------------------------------
@@ -157,20 +168,51 @@ class TestScopeNormalization:
 
     def test_multiple_scopes_sorted(self) -> None:
         settings = _make_settings(
+            scopes="com.intuit.quickbooks.payment com.intuit.quickbooks.accounting"
+        )
+        parts = settings.scopes.split()
+        assert parts == sorted(parts)
+
+    def test_comma_delimited_scopes_normalized(self) -> None:
+        settings = _make_settings(
             scopes="com.intuit.quickbooks.payment,com.intuit.quickbooks.accounting"
         )
-        parts = settings.scopes.split(",")
+        parts = settings.scopes.split()
         assert parts == sorted(parts)
+
+    def test_mixed_delimiters_normalized(self) -> None:
+        settings = _make_settings(
+            scopes="com.intuit.quickbooks.payment, com.intuit.quickbooks.accounting"
+        )
+        parts = settings.scopes.split()
+        assert parts == sorted(parts)
+        assert len(parts) == 2
 
     def test_duplicate_scopes_removed(self) -> None:
         settings = _make_settings(
-            scopes="com.intuit.quickbooks.accounting,com.intuit.quickbooks.accounting"
+            scopes="com.intuit.quickbooks.accounting com.intuit.quickbooks.accounting"
         )
         assert settings.scopes == "com.intuit.quickbooks.accounting"
 
     def test_whitespace_stripped(self) -> None:
         settings = _make_settings(scopes="  com.intuit.quickbooks.accounting  ")
         assert settings.scopes == "com.intuit.quickbooks.accounting"
+
+    def test_empty_scopes_uses_default(self) -> None:
+        settings = _make_settings(scopes="")
+        assert "com.intuit.quickbooks.accounting" in settings.scopes
+
+    def test_scopes_in_url_are_space_delimited(self) -> None:
+        settings = _make_settings(
+            scopes="com.intuit.quickbooks.payment,com.intuit.quickbooks.accounting"
+        )
+        result = build_authorization_url(settings, state="test")
+        # Scopes in URL must be space-separated.
+        assert "scope=com.intuit.quickbooks.accounting+com.intuit.quickbooks.payment" in (
+            result.authorization_url
+            or "scope=com.intuit.quickbooks.accounting%20com.intuit.quickbooks.payment"
+            in result.authorization_url
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -186,22 +228,15 @@ class TestSecretProtection:
         repr_str = repr(settings)
         assert _FAKE_CLIENT_SECRET not in repr_str
 
-    def test_state_secret_not_in_repr(self) -> None:
-        settings = _make_settings()
-        repr_str = repr(settings)
-        assert _FAKE_STATE_SECRET not in repr_str
-
     def test_validation_error_does_not_expose_secrets(self) -> None:
         settings = _make_settings(client_id="")
         with pytest.raises(QuickBooksConfigurationError) as exc_info:
             settings.validate_for_oauth()
         msg = str(exc_info.value)
         assert _FAKE_CLIENT_SECRET not in msg
-        assert _FAKE_STATE_SECRET not in msg
 
     def test_secret_str_masked(self) -> None:
         settings = _make_settings()
-        # SecretStr should display as ********** when converted to str.
         secret_repr = str(settings.client_secret)
         assert _FAKE_CLIENT_SECRET not in secret_repr
 
@@ -232,7 +267,6 @@ class TestAuthorizationUrl:
     def test_redirect_uri_encoded(self) -> None:
         settings = _make_settings()
         result = build_authorization_url(settings, state="test-state")
-        # The redirect URI should be URL-encoded in the query string.
         assert "redirect_uri=" in result.authorization_url
 
     def test_scopes_in_url(self) -> None:
@@ -253,15 +287,22 @@ class TestAuthorizationUrl:
         assert "client_secret" not in result.authorization_url
         assert _FAKE_CLIENT_SECRET not in result.authorization_url
 
-    def test_result_is_frozen(self) -> None:
+    def test_result_is_frozen_dataclass(self) -> None:
         settings = _make_settings()
         result = build_authorization_url(settings, state="test-state")
         assert isinstance(result, AuthorizationResult)
 
-    def test_missing_config_raises_oauth_error(self) -> None:
+    def test_missing_config_raises_configuration_error(self) -> None:
         settings = QuickBooksOAuthSettings()
-        with pytest.raises(QuickBooksOAuthError, match="Cannot build"):
+        with pytest.raises(QuickBooksConfigurationError):
             build_authorization_url(settings, state="test-state")
+
+    def test_configuration_error_propagates_without_wrapping(self) -> None:
+        """QuickBooksConfigurationError must remain distinguishable."""
+        settings = QuickBooksOAuthSettings()
+        with pytest.raises(QuickBooksConfigurationError):
+            build_authorization_url(settings)
+        # Must NOT be wrapped in QuickBooksOAuthError.
 
 
 # ---------------------------------------------------------------------------
@@ -282,10 +323,8 @@ class TestStateGeneration:
         assert state1 != state2
 
     def test_state_is_url_safe(self) -> None:
-        # token_urlsafe returns only URL-safe characters.
         for _ in range(10):
             state = generate_state()
-            # URL-safe base64 uses only A-Z, a-z, 0-9, -, _
             assert all(c.isalnum() or c in "-_" for c in state)
 
 
@@ -304,7 +343,6 @@ class TestSecurity:
             settings.validate_for_oauth()
         msg = str(exc_info.value)
         assert _FAKE_CLIENT_SECRET not in msg
-        assert _FAKE_STATE_SECRET not in msg
 
     def test_secrets_not_in_generated_url(self) -> None:
         """Client secret must never appear in the authorization URL."""
@@ -312,12 +350,4 @@ class TestSecurity:
         result = build_authorization_url(settings)
         url = result.authorization_url
         assert _FAKE_CLIENT_SECRET not in url
-        assert _FAKE_STATE_SECRET not in url
         assert "client_secret" not in url
-        assert "state_secret" not in url
-
-    def test_oauth_error_from_bad_config(self) -> None:
-        """OAuth error wraps configuration errors cleanly."""
-        settings = QuickBooksOAuthSettings()
-        with pytest.raises(QuickBooksOAuthError):
-            build_authorization_url(settings)

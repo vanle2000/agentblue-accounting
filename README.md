@@ -97,7 +97,6 @@ QUICKBOOKS_CLIENT_SECRET=your-client-secret
 QUICKBOOKS_REDIRECT_URI=https://your-app.com/callback
 QUICKBOOKS_ENVIRONMENT=sandbox
 QUICKBOOKS_SCOPES=com.intuit.quickbooks.accounting
-QUICKBOOKS_STATE_SECRET=a-random-secret-for-state-signing
 ```
 
 - `sandbox` uses the Intuit sandbox environment for testing.
@@ -105,6 +104,7 @@ QUICKBOOKS_STATE_SECRET=a-random-secret-for-state-signing
 - All QuickBooks settings are optional until OAuth functionality is used.
 - Existing health endpoints and unrelated features work without
   QuickBooks credentials.
+- State persistence and callback validation are deferred to Stage 3B.
 
 Run the QuickBooks tests:
 

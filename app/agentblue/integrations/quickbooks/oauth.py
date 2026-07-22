@@ -3,6 +3,8 @@
 Generates the Intuit OAuth2 authorization URL with a cryptographically
 secure state parameter. Does not implement callback handling, code
 exchange, token storage, or token refresh.
+
+State persistence and callback validation are deferred to Stage 3B.
 """
 
 from __future__ import annotations
@@ -47,12 +49,10 @@ def build_authorization_url(
         AuthorizationResult containing the URL and state.
 
     Raises:
-        QuickBooksOAuthError: If the URL cannot be constructed.
+        QuickBooksConfigurationError: If required configuration is missing.
+        QuickBooksOAuthError: If the URL cannot be constructed for another reason.
     """
-    try:
-        settings.validate_for_oauth()
-    except Exception as exc:
-        raise QuickBooksOAuthError(f"Cannot build authorization URL: {exc}") from exc
+    settings.validate_for_oauth()
 
     if state is None:
         state = generate_state()

@@ -135,7 +135,8 @@ app/agentblue/integrations/
   that never expose secret values.
 - `oauth.py`: Generates cryptographically secure state values and
   builds Intuit OAuth2 authorization URLs. Pure functions, no global
-  mutable state.
+  mutable state. State persistence and callback validation are
+  deferred to Stage 3B.
 
 ### Security Design
 
