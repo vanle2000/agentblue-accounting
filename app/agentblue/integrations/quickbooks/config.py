@@ -1,4 +1,4 @@
-"""QuickBooks OAuth configuration.
+"""QuickBooks OAuth and API configuration.
 
 Loads QuickBooks-specific settings from environment variables using the
 same pydantic-settings pattern as the main application configuration.
@@ -30,10 +30,12 @@ _INTUIT_ENDPOINTS: dict[QuickBooksEnvironment, dict[str, str]] = {
     QuickBooksEnvironment.SANDBOX: {
         "authorization": "https://appcenter.intuit.com/connect/oauth2",
         "token": "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
+        "api": "https://sandbox-quickbooks.api.intuit.com",
     },
     QuickBooksEnvironment.PRODUCTION: {
         "authorization": "https://appcenter.intuit.com/connect/oauth2",
         "token": "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
+        "api": "https://quickbooks.api.intuit.com",
     },
 }
 
@@ -62,15 +64,17 @@ class QuickBooksOAuthSettings(BaseSettings):
     environment: QuickBooksEnvironment = QuickBooksEnvironment.SANDBOX
     scopes: str = _DEFAULT_SCOPES
 
+    # API client settings
+    api_timeout: float = 30.0
+    api_max_retries: int = 3
+    api_max_connections: int = 10
+    api_page_size: int = 100
+    api_rate_limit_delay: float = 1.0
+
     @field_validator("redirect_uri")
     @classmethod
     def validate_redirect_uri(cls, v: str) -> str:
-        """Validate redirect URI using structured URL parsing.
-
-        Requires a scheme (http or https) and a hostname.
-        Rejects unsupported schemes, whitespace-only, and malformed values.
-        Allows http://localhost for development.
-        """
+        """Validate redirect URI using structured URL parsing."""
         if not v:
             return v
         if not v.strip():
@@ -102,11 +106,7 @@ class QuickBooksOAuthSettings(BaseSettings):
         return " ".join(sorted(set(parts)))
 
     def validate_for_oauth(self) -> None:
-        """Validate that all required fields are set for OAuth operations.
-
-        Raises QuickBooksConfigurationError with an actionable message
-        identifying the missing setting. Never exposes secret values.
-        """
+        """Validate that all required fields are set for OAuth operations."""
         missing: list[str] = []
         if not self.client_id:
             missing.append("QUICKBOOKS_CLIENT_ID")
@@ -121,7 +121,6 @@ class QuickBooksOAuthSettings(BaseSettings):
                 f"Set these environment variables before using "
                 f"QuickBooks OAuth functionality."
             )
-        # Reject explicitly empty scopes after normalization.
         if not self.scopes.strip():
             raise QuickBooksConfigurationError(
                 "QuickBooks OAuth scopes must not be empty. "
@@ -137,6 +136,11 @@ class QuickBooksOAuthSettings(BaseSettings):
     def token_endpoint(self) -> str:
         """Return the Intuit token endpoint for the current environment."""
         return _INTUIT_ENDPOINTS[self.environment]["token"]
+
+    @property
+    def api_base_url(self) -> str:
+        """Return the QuickBooks API base URL for the current environment."""
+        return _INTUIT_ENDPOINTS[self.environment]["api"]
 
     @property
     def normalized_scopes(self) -> list[str]:

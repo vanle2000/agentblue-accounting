@@ -167,6 +167,17 @@ app/agentblue/integrations/
 - No secrets appear in logs, repr output, or test assertions.
 - Token repository uses a Protocol interface for swap-in encryption.
 
+### API Client (Stage 4)
+
+- `api_client.py`: Authenticated async HTTP client with automatic token
+  refresh, retry with exponential backoff, rate limiting (Retry-After),
+  pagination (STARTPOSITION/MAXRESULTS), and structured error mapping.
+  Uses httpx with connection pooling.
+- `services.py`: Service wrappers for Company Info (implemented),
+  Chart of Accounts, Vendors, Customers, Transactions (interfaces only).
+- `health.py`: Lightweight health check verifying token validity and
+  company reachability via the QuickBooks API.
+
 ### Deferred
 
 - Production token persistence with encryption.

@@ -69,9 +69,22 @@
 - Add comprehensive unit tests with mocked HTTP responses.
 - Document token security design and deferred items.
 
+### Stage 4: Production QuickBooks API Client
+
+- Build authenticated async API client with httpx.
+- Implement automatic token refresh on expiry and 401.
+- Implement retry with exponential backoff for transient failures.
+- Implement rate limiting with Retry-After support.
+- Implement pagination via STARTPOSITION/MAXRESULTS.
+- Map HTTP errors to domain exceptions with status codes and Intuit TID.
+- Create service wrappers (CompanyInfo implemented; others as interfaces).
+- Add health check endpoint for token and company reachability.
+- Add 28 new unit tests with mocked HTTP.
+- Document API client architecture and retry strategy.
+
 ## Pending
 
-- Stage 3C: QuickBooks Transaction Sync.
+- Stage 5: QuickBooks Transaction Sync.
 - Stage 3D: Transaction Categorization Agent.
 - Buildium Integration Agent.
 - Vendor Management Agent.
