@@ -51,11 +51,11 @@ The architecture must support future expansion.
 
 ## Current Milestone
 
-Stage 3A: QuickBooks OAuth Configuration and Authorization URL (implemented).
+Stage 3B: QuickBooks OAuth Callback, Token Exchange, and Token Lifecycle (implemented).
 
 ## Next Milestone
 
-Stage 3B: OAuth Callback and Authorization-Code Exchange.
+Stage 3C: QuickBooks Transaction Sync.
 
 ## Known Infrastructure Issues
 

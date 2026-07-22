@@ -109,8 +109,18 @@ QUICKBOOKS_SCOPES=com.intuit.quickbooks.accounting
 Run the QuickBooks tests:
 
 ```bash
-pytest tests/unit/test_quickbooks_oauth.py -vv
+pytest tests/unit/test_quickbooks_oauth.py tests/unit/test_quickbooks_callback.py tests/unit/test_quickbooks_client.py tests/unit/test_quickbooks_models.py tests/unit/test_quickbooks_repository.py -vv
 ```
+
+### QuickBooks OAuth Endpoints
+
+- `GET /api/v1/integrations/quickbooks/authorize` — Generate an
+  authorization URL and state for the OAuth flow.
+- `GET /api/v1/integrations/quickbooks/callback` — Handle the OAuth
+  callback from Intuit, exchange the code for tokens.
+
+Tokens are never exposed in endpoint responses. The callback returns
+only `realm_id`, `token_type`, and `expires_in`.
 
 ## Docker
 

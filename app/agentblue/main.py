@@ -11,6 +11,9 @@ from fastapi import FastAPI
 from agentblue.api.health import router as health_router
 from agentblue.config import get_settings
 from agentblue.db.session import dispose_engine
+from agentblue.integrations.quickbooks.router import (
+    router as quickbooks_router,
+)
 from agentblue.logging import configure_logging
 
 
@@ -50,6 +53,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(health_router)
+    app.include_router(quickbooks_router)
     return app
 
 

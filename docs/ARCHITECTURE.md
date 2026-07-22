@@ -120,23 +120,41 @@ app/agentblue/integrations/
   __init__.py
   quickbooks/
     __init__.py
+    callback.py       # OAuth callback validation
+    client.py         # Token exchange and refresh (async httpx)
     config.py         # OAuth settings (pydantic-settings, SecretStr)
-    exceptions.py     # QuickBooksConfigurationError, QuickBooksOAuthError
-    oauth.py          # Authorization URL generation, state handling
+    exceptions.py     # Domain-specific exception hierarchy
+    models.py         # Token response models with expiration tracking
+    oauth.py          # Authorization URL generation
+    repository.py     # Token persistence interface + in-memory impl
+    router.py         # FastAPI endpoints (authorize, callback)
 ```
 
 ### Module Responsibilities
 
+- `callback.py`: Validates OAuth callback parameters (code, state,
+  realmId). Uses `hmac.compare_digest` for constant-time state
+  comparison. Maps Intuit errors to domain exceptions.
+- `client.py`: Async HTTP client for authorization-code exchange and
+  token refresh. Uses httpx with explicit timeouts. Retries only
+  transient failures (429, 5xx). Does not retry permanent OAuth
+  errors (invalid_grant, invalid_client).
 - `config.py`: Loads QuickBooks OAuth settings from environment
   variables. Validates required fields, normalizes scopes, maps
   sandbox/production to Intuit endpoints. Uses SecretStr for
   sensitive fields.
-- `exceptions.py`: Domain-specific exceptions with actionable messages
-  that never expose secret values.
+- `exceptions.py`: Domain-specific exception hierarchy with
+  actionable messages that never expose secret values.
+- `models.py`: Typed Pydantic models for Intuit token responses.
+  Calculates UTC-aware expiration timestamps. Provides methods
+  for expiration and near-expiry checks. Tokens are SecretStr.
 - `oauth.py`: Generates cryptographically secure state values and
-  builds Intuit OAuth2 authorization URLs. Pure functions, no global
-  mutable state. State persistence and callback validation are
-  deferred to Stage 3B.
+  builds Intuit OAuth2 authorization URLs. Pure functions.
+- `repository.py`: Protocol-based token persistence interface.
+  In-memory implementation for testing. Production must use
+  encrypted storage.
+- `router.py`: FastAPI endpoints for OAuth authorize and callback.
+  Delegates business logic to service layer.
 
 ### Security Design
 
@@ -145,4 +163,15 @@ app/agentblue/integrations/
   variable name, never by value.
 - Authorization URLs never include the client secret.
 - State values use `secrets.token_urlsafe(32)` for 256 bits of entropy.
+- Callback state comparison uses `hmac.compare_digest` (constant-time).
 - No secrets appear in logs, repr output, or test assertions.
+- Token repository uses a Protocol interface for swap-in encryption.
+
+### Deferred
+
+- Production token persistence with encryption.
+- Server-side session state storage for OAuth flow.
+- QuickBooks transaction synchronization.
+- Chart of Accounts synchronization.
+- Categorization rules.
+- Write operations to QuickBooks.

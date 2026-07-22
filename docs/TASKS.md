@@ -57,9 +57,20 @@
 - Add unit tests using fake credentials.
 - Document the authorization flow.
 
+### Stage 3B: QuickBooks OAuth Callback, Token Exchange, and Token Lifecycle
+
+- Implement OAuth callback validation with constant-time state comparison.
+- Implement authorization-code exchange via async httpx client.
+- Implement token response models with expiration calculations.
+- Implement token refresh with retry for transient failures.
+- Define TokenRepository protocol with in-memory implementation.
+- Add FastAPI endpoints for authorize and callback.
+- Expand exception hierarchy (callback, state mismatch, token errors).
+- Add comprehensive unit tests with mocked HTTP responses.
+- Document token security design and deferred items.
+
 ## Pending
 
-- Stage 3B: QuickBooks Token Exchange and Storage.
 - Stage 3C: QuickBooks Transaction Sync.
 - Stage 3D: Transaction Categorization Agent.
 - Buildium Integration Agent.
