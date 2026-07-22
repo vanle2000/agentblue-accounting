@@ -71,7 +71,11 @@ class AccountingRepository:
         existing = result.scalar_one_or_none()
 
         if existing:
-            if existing.raw_payload_hash == payload_hash and existing.active == active:
+            if (
+                existing.raw_payload_hash == payload_hash
+                and existing.active == active
+                and existing.source_deleted == source_deleted
+            ):
                 existing.source_last_seen_at = now
                 return RecordOutcome.UNCHANGED
             existing.sync_token = sync_token
@@ -101,8 +105,17 @@ class AccountingRepository:
 
     # --- Canonical accounts ---
 
-    async def upsert_account(self, account: NormalizedAccount) -> str:
-        """Upsert canonical account. Returns outcome."""
+    async def upsert_account(
+        self,
+        account: NormalizedAccount,
+        *,
+        source_deleted: bool = False,
+    ) -> str:
+        """Upsert canonical account. Returns outcome.
+
+        source_deleted is an explicit parameter — NOT derived from
+        account.active. An inactive account (Active=false) is NOT deleted.
+        """
         now = _utcnow()
         payload_hash = _hash_payload(account.raw_payload)
 
@@ -120,7 +133,8 @@ class AccountingRepository:
                 or existing.active != account.active
                 or existing.account_type != account.account_type
                 or existing.classification != account.classification
-                or existing.source_deleted != (not account.active)
+                or existing.source_deleted != source_deleted
+                or existing.parent_quickbooks_id != account.parent_quickbooks_id
             )
             if not changed:
                 existing.source_last_seen_at = now
@@ -145,7 +159,7 @@ class AccountingRepository:
             existing.source_updated_at = account.source_updated_at
             existing.source_last_seen_at = now
             existing.raw_payload_hash = payload_hash
-            existing.source_deleted = not account.active
+            existing.source_deleted = source_deleted
             return RecordOutcome.UPDATED
 
         db_account = QuickBooksAccount(
@@ -170,7 +184,7 @@ class AccountingRepository:
             source_updated_at=account.source_updated_at,
             source_last_seen_at=now,
             raw_payload_hash=payload_hash,
-            source_deleted=not account.active,
+            source_deleted=source_deleted,
         )
         self._session.add(db_account)
         return RecordOutcome.INSERTED

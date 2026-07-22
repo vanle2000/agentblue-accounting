@@ -1,7 +1,14 @@
 """Account synchronization service.
 
 Orchestrates backfill and incremental CDC sync for QuickBooks accounts.
-Reuses Stage 4 API client and Stage 5 checkpoint patterns.
+Reuses Stage 4 API client and Stage 5 checkpoint/locking patterns.
+
+Backfill query behavior (verified against Intuit documentation):
+- SELECT * FROM Account returns ALL accounts (active and inactive).
+- The QuickBooks Query API does NOT filter out inactive list entities
+  by default for the Account entity.
+- Metadata.LastUpdatedTime is used for time-bounded pagination.
+- No special WHERE clause is needed to include inactive accounts.
 """
 
 from __future__ import annotations
@@ -18,19 +25,33 @@ from agentblue.integrations.quickbooks.accounting.repository import (
     RecordOutcome,
 )
 from agentblue.integrations.quickbooks.api_client import QuickBooksApiClient  # noqa: TC001
+from agentblue.integrations.quickbooks.sync.domain import EntityType, SyncMode
 from agentblue.integrations.quickbooks.sync.query_builder import format_date
 from agentblue.integrations.quickbooks.sync.repository import SyncRepository
 
 logger = structlog.get_logger(__name__)
 
-# Account-specific entity type for checkpoints
-_ACCOUNT_ENTITY = "Account"
+# Account entity type for checkpoints (uses Stage 5 EntityType enum)
+_ACCOUNT_ENTITY = EntityType.ACCOUNT
 
-# CDC constants (same as Stage 5)
+# CDC constants
 _CDC_MAX_OBJECTS = 1000
 _CDC_LOOKBACK_DAYS = 30
 _CDC_MIN_WINDOW_SECONDS = 3600
 _CDC_MAX_SPLIT_DEPTH = 10
+
+
+def _is_explicitly_deleted(raw: dict[str, Any]) -> bool:
+    """Detect an explicit QuickBooks deletion signal.
+
+    QuickBooks marks deleted entities with domain='QBO' and status='Deleted'
+    in CDC responses, or with Active=false combined with a DeletedTime in
+    MetaData. Active=false alone means inactive, NOT deleted.
+    """
+    metadata = raw.get("MetaData", {})
+    has_deleted_time = bool(metadata.get("DeletedTime"))
+    has_status_deleted = raw.get("status") == "Deleted"
+    return has_deleted_time or has_status_deleted
 
 
 class AccountSyncService:
@@ -62,8 +83,15 @@ class AccountSyncService:
     ) -> dict[str, int]:
         """Backfill all accounts (active and inactive).
 
-        Uses WHERE Active IN (true, false) to ensure inactive accounts
-        are included in the query.
+        Query behavior: SELECT * FROM Account returns both active and
+        inactive accounts. No special WHERE clause is required to include
+        inactive accounts. Metadata.LastUpdatedTime is used for time-bounded
+        pagination.
+
+        Uses Stage 5 checkpoint infrastructure for resumability:
+        - entity_type = Account, sync_mode = BACKFILL
+        - checkpoint advances after each successful page
+        - failed pages do not advance the checkpoint
         """
         if start_date is None:
             start_date = datetime.now(UTC) - timedelta(days=365 * 5)
@@ -116,6 +144,15 @@ class AccountSyncService:
             resolved = await self._repo.resolve_parent_references(realm_id)
             await self._session.commit()
 
+            # Advance checkpoint after successful page persistence
+            await self._sync_repo.advance_checkpoint(
+                realm_id,
+                _ACCOUNT_ENTITY,
+                SyncMode.BACKFILL,
+                end_date,
+            )
+            await self._session.commit()
+
             logger.info(
                 "account_backfill_page",
                 realm_id=realm_id,
@@ -136,26 +173,98 @@ class AccountSyncService:
         realm_id: str,
         since: datetime | None = None,
     ) -> dict[str, int]:
-        """Incremental Account sync using CDC.
+        """Incremental Account sync using CDC with window splitting.
 
-        Uses the CDC endpoint with overlap windows.
+        Reuses the Stage 5 bounded window-splitting pattern:
+        - 30-day CDC lookback limit enforced
+        - Overlap window applied
+        - Response-size threshold triggers splitting
+        - Maximum split depth and minimum window duration bounded
+        - Checkpoint advances only after all windows persist
         """
         if since is None:
-            since = datetime.now(UTC) - timedelta(days=1)
+            # Read last successful checkpoint
+            checkpoint = await self._sync_repo.get_checkpoint(
+                realm_id,
+                _ACCOUNT_ENTITY,
+                SyncMode.INCREMENTAL,
+            )
+            if checkpoint and checkpoint.last_successful_source_timestamp:
+                since = checkpoint.last_successful_source_timestamp - timedelta(
+                    seconds=self._cdc_overlap
+                )
+            else:
+                since = datetime.now(UTC) - timedelta(days=1)
 
         now = datetime.now(UTC)
         lookback_limit = now - timedelta(days=_CDC_LOOKBACK_DAYS)
         if since < lookback_limit:
             since = lookback_limit
 
-        # Apply overlap
-        since_with_overlap = since - timedelta(seconds=self._cdc_overlap)
+        from agentblue.integrations.quickbooks.sync.domain import SyncWindow
 
-        query = f"SELECT * FROM Account CHANGEDSINCE '{format_date(since_with_overlap)}'"
+        window = SyncWindow(start_at=since, end_at=now)
+
+        counts = await self._cdc_window_with_splitting(realm_id, window, depth=0)
+
+        await self._repo.resolve_parent_references(realm_id)
+        await self._session.commit()
+
+        # Advance checkpoint after all windows complete
+        await self._sync_repo.advance_checkpoint(
+            realm_id,
+            _ACCOUNT_ENTITY,
+            SyncMode.INCREMENTAL,
+            now,
+        )
+        await self._session.commit()
+
+        return counts
+
+    async def _cdc_window_with_splitting(
+        self,
+        realm_id: str,
+        window: Any,
+        depth: int,
+    ) -> dict[str, int]:
+        """Execute a CDC query with window splitting if near the object limit.
+
+        Mirrors the Stage 5 bounded splitting pattern.
+        """
+        from agentblue.integrations.quickbooks.exceptions import (
+            QuickBooksCdcWindowError,
+        )
+
+        if depth > self._cdc_max_split_depth:
+            logger.warning(
+                "cdc_max_split_depth_reached",
+                depth=depth,
+                window_start=str(window.start_at),
+                window_end=str(window.end_at),
+            )
+            raise QuickBooksCdcWindowError(
+                f"CDC window splitting exceeded max depth ({self._cdc_max_split_depth})."
+            )
+
+        if window.duration_seconds < self._cdc_min_window:
+            logger.warning(
+                "cdc_minimum_window_reached",
+                duration_seconds=window.duration_seconds,
+                min_seconds=self._cdc_min_window,
+            )
+            raise QuickBooksCdcWindowError(
+                f"CDC window ({window.duration_seconds}s) below minimum "
+                f"({self._cdc_min_window}s). Cannot split further."
+            )
+
+        query = f"SELECT * FROM Account CHANGEDSINCE '{format_date(window.start_at)}'"
 
         result = await self._client.get(
             f"/v3/company/{realm_id}/cdc",
-            params={"entities": query, "changedSince": format_date(since_with_overlap)},
+            params={
+                "entities": query,
+                "changedSince": format_date(window.start_at),
+            },
         )
 
         cdc_response = result.get("CDCResponse", {})
@@ -164,18 +273,48 @@ class AccountSyncService:
         )
 
         items = cdc_entities.get("Account", [])
+        total_objects = len(items)
 
-        counts = await self._persist_batch(realm_id, items)
+        counts: dict[str, int] = {
+            "fetched": 0,
+            "inserted": 0,
+            "updated": 0,
+            "unchanged": 0,
+            "marked_deleted": 0,
+        }
+
+        if items:
+            batch_counts = await self._persist_batch(realm_id, items)
+            for k in counts:
+                counts[k] += batch_counts[k]
+
         await self._session.commit()
 
-        # Resolve parent references
-        await self._repo.resolve_parent_references(realm_id)
-        await self._session.commit()
+        # Split if near CDC limit
+        if total_objects >= _CDC_MAX_OBJECTS * 0.9:
+            logger.info(
+                "cdc_splitting_window",
+                total_objects=total_objects,
+                limit=_CDC_MAX_OBJECTS,
+                depth=depth,
+            )
+            window_a, window_b = window.split()
+            counts_a = await self._cdc_window_with_splitting(realm_id, window_a, depth + 1)
+            counts_b = await self._cdc_window_with_splitting(realm_id, window_b, depth + 1)
+            for k in counts:
+                counts[k] = counts_a.get(k, 0) + counts_b.get(k, 0)
 
         return counts
 
     async def _persist_batch(self, realm_id: str, items: list[dict[str, Any]]) -> dict[str, int]:
-        """Persist a batch of raw Account entities."""
+        """Persist a batch of raw Account entities.
+
+        State distinction:
+        - Active=true  → active=True,  source_deleted=False
+        - Active=false → active=False, source_deleted=False (inactive, NOT deleted)
+        - Explicit deletion signal (DeletedTime or status=Deleted)
+          → source_deleted=True, active preserves last known value
+        """
         counts = {
             "fetched": len(items),
             "inserted": 0,
@@ -189,7 +328,7 @@ class AccountSyncService:
                 qb_id = str(raw.get("Id", ""))
                 sync_token = int(raw.get("SyncToken", 0))
                 active = bool(raw.get("Active", True))
-                is_deleted = not active
+                source_deleted = _is_explicitly_deleted(raw)
 
                 # Upsert source snapshot
                 await self._repo.upsert_account_snapshot(
@@ -198,14 +337,16 @@ class AccountSyncService:
                     raw=raw,
                     sync_token=sync_token,
                     active=active,
-                    source_deleted=is_deleted,
+                    source_deleted=source_deleted,
                     source_created_at=str(raw.get("MetaData", {}).get("CreateTime", "")),
                     source_updated_at=str(raw.get("MetaData", {}).get("LastUpdatedTime", "")),
                 )
 
                 # Normalize and upsert canonical account
                 normalized = normalize_account(raw, realm_id)
-                outcome = await self._repo.upsert_account(normalized)
+                outcome = await self._repo.upsert_account(
+                    normalized, source_deleted=source_deleted
+                )
 
                 if outcome == RecordOutcome.INSERTED:
                     counts["inserted"] += 1

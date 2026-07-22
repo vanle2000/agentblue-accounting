@@ -46,9 +46,16 @@ pytestmark = pytest.mark.unit
 
 class TestEntityRegistry:
     def test_all_supported_entities_registered(self) -> None:
-        """Every EntityType must have a registry entry."""
+        """Every transaction EntityType must have a registry entry.
+
+        EntityType.ACCOUNT is excluded — it is an accounting-context
+        entity managed by the Stage 6 accounting module, not the
+        transaction sync registry.
+        """
         registry = get_all_registry_entries()
         for et in EntityType:
+            if et == EntityType.ACCOUNT:
+                continue
             assert et in registry, f"Entity {et.value} not in registry"
 
     def test_unknown_entity_rejected(self) -> None:
@@ -126,8 +133,9 @@ class TestQueryBuilder:
 
     def test_query_injection_rejected(self) -> None:
         """Entity names must come from the registry, not user input."""
-        with pytest.raises((QuickBooksUnsupportedEntityError, ValueError)):
-            get_registry_entry(EntityType("Purchase; DROP TABLE"))
+        # EntityType itself rejects invalid values at construction time
+        with pytest.raises(ValueError, match="is not a valid EntityType"):
+            EntityType("Purchase; DROP TABLE")
 
 
 # ---------------------------------------------------------------------------
@@ -628,6 +636,8 @@ class TestSecurity:
     def test_entity_names_cannot_inject(self) -> None:
         """Entity names from registry cannot contain SQL-like injection."""
         for et in EntityType:
+            if et == EntityType.ACCOUNT:
+                continue  # Account is managed by accounting module
             entry = get_registry_entry(et)
             name = entry.quickbooks_entity_name
             assert ";" not in name

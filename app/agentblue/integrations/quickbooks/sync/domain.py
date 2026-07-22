@@ -50,9 +50,10 @@ class SourceEntityStatus(str, Enum):
 
 
 class EntityType(str, Enum):
-    """Supported QuickBooks transaction entity types.
+    """Supported QuickBooks entity types.
 
     Uses exact QuickBooks API entity names as values.
+    Includes Account for Chart of Accounts synchronization.
     """
 
     PURCHASE = "Purchase"
@@ -67,6 +68,7 @@ class EntityType(str, Enum):
     CREDIT_MEMO = "CreditMemo"
     VENDOR_CREDIT = "VendorCredit"
     INVOICE = "Invoice"
+    ACCOUNT = "Account"
 
 
 # --- Value objects ---
