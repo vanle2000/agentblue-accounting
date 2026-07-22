@@ -7,8 +7,9 @@ Modular monolith for property management accounting, built with FastAPI, SQLAlch
 - **Python 3.12.10** (the project-local runtime)
 - **Docker Desktop** with Docker Compose
 - **Git** 2.54+
-- **VS Code** (recommended editor)
+- **VS Code**
 
+  
 ### Python version isolation
 
 | Environment         | Python version | Purpose                        |
