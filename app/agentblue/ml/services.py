@@ -128,6 +128,9 @@ class MLService:
             status=TrainingRunStatus.PENDING.value,
             model_type=model_type,
             calibration_method=calibration_method,
+            random_seed=seed,
+            feature_version=FEATURE_VERSION,
+            code_version=CODE_VERSION,
         )
         session.add(run)
         await session.flush()

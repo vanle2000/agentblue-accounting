@@ -25,11 +25,17 @@ class DatasetResponse(BaseModel):
 
     id: str
     realm_id: str
+    name: str = ""
     status: str
     feature_version: str
+    dataset_fingerprint: str = ""
+    label_policy_version: str = "1.0"
     row_count: int = 0
+    excluded_row_count: int = 0
     class_count: int = 0
     split_summary: dict[str, Any] = Field(default_factory=dict)
+    source_start_at: datetime | None = None
+    source_end_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -68,6 +74,15 @@ class TrainingRunResponse(BaseModel):
     status: str
     model_type: str
     calibration_method: str
+    random_seed: int = 42
+    feature_version: str = "1.0"
+    code_version: str = "1.0.0"
+    training_row_count: int | None = None
+    validation_row_count: int | None = None
+    test_row_count: int | None = None
+    class_count: int | None = None
+    artifact_uri: str | None = None
+    artifact_sha256: str | None = None
     model_id: str | None = None
     metrics: dict[str, Any] = Field(default_factory=dict)
     started_at: datetime | None = None
@@ -83,12 +98,17 @@ class ModelResponse(BaseModel):
 
     id: str
     realm_id: str
+    name: str = ""
+    model_version: str = "1"
     model_type: str
     status: str
     feature_version: str
+    label_policy_version: str = "1.0"
     code_version: str
     calibration_method: str
+    dataset_fingerprint: str = ""
     artifact_path: str | None = None
+    artifact_uri: str | None = None
     artifact_sha256: str | None = None
     training_run_id: str | None = None
     promoted_at: datetime | None = None
@@ -107,6 +127,10 @@ class ModelMetricsResponse(BaseModel):
     brier_score: Decimal | None = None
     per_class_metrics: dict[str, Any] = Field(default_factory=dict)
     confusion_matrix: list[list[int]] = Field(default_factory=list)
+    training_metrics: dict[str, Any] = Field(default_factory=dict)
+    validation_metrics: dict[str, Any] = Field(default_factory=dict)
+    test_metrics: dict[str, Any] = Field(default_factory=dict)
+    calibration_metrics: dict[str, Any] = Field(default_factory=dict)
     evaluated_at: datetime | None = None
 
 
@@ -118,7 +142,14 @@ class PredictionResponse(BaseModel):
 
     id: str
     transaction_id: str
+    categorization_id: str = ""
+    source_transaction_hash: str = ""
     model_id: str
+    predicted_account_quickbooks_id: str = ""
+    raw_probability: Decimal | None = None
+    calibrated_probability: Decimal | None = None
+    rank: int = 1
+    prediction_fingerprint: str = ""
     top_predictions: list[dict[str, Any]] = Field(default_factory=list)
     inference_mode: str
     latency_ms: int | None = None
@@ -133,7 +164,10 @@ class ShadowEvaluationResponse(BaseModel):
     model_id: str
     ml_account_id: str | None = None
     rule_account_id: str | None = None
+    deterministic_account_quickbooks_id: str | None = None
     outcome: str
+    ml_was_correct: bool | None = None
+    deterministic_was_correct: bool | None = None
     resolved: bool = False
     created_at: datetime | None = None
 
@@ -157,7 +191,11 @@ class DriftReportResponse(BaseModel):
     model_id: str
     feature_drift: dict[str, Any] = Field(default_factory=dict)
     label_drift: dict[str, Any] = Field(default_factory=dict)
+    prediction_drift: dict[str, Any] = Field(default_factory=dict)
+    class_distribution: dict[str, Any] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
+    warning_count: int = 0
+    status: str = "PENDING"
     created_at: datetime | None = None
 
 

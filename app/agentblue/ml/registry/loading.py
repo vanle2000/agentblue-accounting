@@ -50,7 +50,7 @@ async def load_registered_model(
     if ml_model is None:
         raise ModelNotFoundError(f"Model not found: {model_id}")
 
-    if not ml_model.artifact_path:
+    if not ml_model.artifact_path and not ml_model.artifact_uri:
         raise ArtifactError(f"Model {model_id} has no artifact path")
 
     if not ml_model.artifact_sha256:
@@ -58,15 +58,16 @@ async def load_registered_model(
 
     mgr = artifact_manager or ArtifactManager()
 
+    artifact_location = ml_model.artifact_uri or ml_model.artifact_path or ""
     logger.info(
         "loading_registered_model",
         model_id=model_id,
-        artifact_path=ml_model.artifact_path,
+        artifact_path=artifact_location,
     )
 
     # Verify and load the model object.
     model_obj = mgr.load_artifact(
-        uri=ml_model.artifact_path,
+        uri=artifact_location,
         expected_sha256=ml_model.artifact_sha256,
     )
 

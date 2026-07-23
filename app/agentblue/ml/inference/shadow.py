@@ -116,6 +116,13 @@ class ShadowInference:
                 transaction_id=categorization_id,
                 realm_id=realm_id,
                 model_id=model_id,
+                categorization_id=categorization_id,
+                source_transaction_hash="",
+                predicted_account_quickbooks_id=ml_top_account,
+                raw_probability=float(ml_top.get("raw_prob", 0.0)),
+                calibrated_probability=float(ml_top_prob),
+                rank=1,
+                prediction_fingerprint="",
                 inference_mode="SHADOW",
                 top_predictions={
                     "predictions": [
@@ -141,7 +148,10 @@ class ShadowInference:
                 prediction_id=pred_record.id,
                 ml_account_quickbooks_id=ml_top_account,
                 rule_account_quickbooks_id=rule_account or None,
+                deterministic_account_quickbooks_id=rule_account or None,
                 outcome=outcome.value,
+                ml_was_correct=None,
+                deterministic_was_correct=None,
                 resolved=False,
             )
             session.add(eval_record)

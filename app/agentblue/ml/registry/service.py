@@ -46,9 +46,19 @@ class ModelRegistry:
         code_version: str,
         calibration_method: str,
         artifact_path: str | None = None,
+        artifact_uri: str | None = None,
         artifact_sha256: str | None = None,
         metrics: dict[str, Any] | None = None,
         hyperparameters: dict[str, Any] | None = None,
+        name: str = "",
+        model_version: str = "1",
+        label_policy_version: str = "1.0",
+        dataset_fingerprint: str = "",
+        class_mapping: dict[str, Any] | None = None,
+        training_metrics: dict[str, Any] | None = None,
+        validation_metrics: dict[str, Any] | None = None,
+        test_metrics: dict[str, Any] | None = None,
+        calibration_metrics: dict[str, Any] | None = None,
     ) -> MlModel:
         """Register a new model in CANDIDATE status.
 
@@ -61,25 +71,45 @@ class ModelRegistry:
             code_version: Code version that produced this model.
             calibration_method: Calibration strategy applied.
             artifact_path: Path to the serialized model artifact.
+            artifact_uri: URI to the serialized model artifact.
             artifact_sha256: SHA-256 hash of the artifact file.
             metrics: Evaluation metrics dict.
             hyperparameters: Hyperparameters used for training.
+            name: Human-readable model name.
+            model_version: Version string for the model.
+            label_policy_version: Label policy version used.
+            dataset_fingerprint: Fingerprint of the training dataset.
+            class_mapping: Label-to-index mapping.
+            training_metrics: Training split metrics.
+            validation_metrics: Validation split metrics.
+            test_metrics: Test split metrics.
+            calibration_metrics: Calibration diagnostics.
 
         Returns:
             The newly created MlModel ORM instance.
         """
         model = MlModel(
             realm_id=realm_id,
+            name=name,
+            model_version=model_version,
             model_type=model_type,
             status=ModelStatus.CANDIDATE.value,
             feature_version=feature_version,
+            label_policy_version=label_policy_version,
             code_version=code_version,
             calibration_method=calibration_method,
+            dataset_fingerprint=dataset_fingerprint,
             artifact_path=artifact_path,
+            artifact_uri=artifact_uri,
             artifact_sha256=artifact_sha256,
             training_run_id=training_run_id,
+            class_mapping=class_mapping or {},
             hyperparameters=hyperparameters or {},
             metrics=metrics or {},
+            training_metrics=training_metrics or {},
+            validation_metrics=validation_metrics or {},
+            test_metrics=test_metrics or {},
+            calibration_metrics=calibration_metrics or {},
         )
         session.add(model)
         await session.flush()
@@ -131,10 +161,14 @@ class ModelRegistry:
         Raises:
             InvalidModelTransitionError: If the transition is not allowed.
         """
-        # Reject PRIMARY mode explicitly.
-        if new_status == ModelStatus.CHAMPION.value:
+        # PRIMARY is an inference mode, not a model lifecycle status.
+        # It must be rejected at the inference layer, not here.
+        # CHAMPION is a valid future lifecycle status reserved for
+        # governance -- do not conflate the two concepts.
+        if new_status == "PRIMARY":
             raise InvalidModelTransitionError(
-                "PRIMARY mode is not yet supported. Models can only be promoted to SHADOW status."
+                "PRIMARY is an inference mode, not a model lifecycle status. "
+                "Use InferenceMode.PRIMARY at the inference layer."
             )
 
         result = await session.execute(select(MlModel).where(MlModel.id == model_id))
