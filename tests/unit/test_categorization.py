@@ -401,6 +401,98 @@ class TestStaleDetection:
         }
         assert compute_entity_hash(entity) == compute_entity_hash(entity)
 
+    def test_line_added_makes_stale(self) -> None:
+        reviewed = {
+            "Id": "1",
+            "SyncToken": "5",
+            "TotalAmt": "100",
+            "TxnDate": "2024-01-01",
+            "Line": [],
+        }
+        current = {
+            "Id": "1",
+            "SyncToken": "5",
+            "TotalAmt": "100",
+            "TxnDate": "2024-01-01",
+            "Line": [
+                {
+                    "Id": "1",
+                    "DetailType": "AccountBasedExpenseLineDetail",
+                    "Amount": "100",
+                    "AccountBasedExpenseLineDetail": {"AccountRef": {"value": "50"}},
+                }
+            ],
+        }
+        reviewed_hash = compute_entity_hash(reviewed)
+        reasons = check_stale("5", reviewed_hash, current)
+        assert len(reasons) >= 1
+
+    def test_line_account_changed_makes_stale(self) -> None:
+        reviewed = {
+            "Id": "1",
+            "SyncToken": "5",
+            "TotalAmt": "100",
+            "TxnDate": "2024-01-01",
+            "Line": [
+                {
+                    "Id": "1",
+                    "DetailType": "AccountBasedExpenseLineDetail",
+                    "Amount": "100",
+                    "AccountBasedExpenseLineDetail": {"AccountRef": {"value": "50"}},
+                }
+            ],
+        }
+        current = {
+            "Id": "1",
+            "SyncToken": "5",
+            "TotalAmt": "100",
+            "TxnDate": "2024-01-01",
+            "Line": [
+                {
+                    "Id": "1",
+                    "DetailType": "AccountBasedExpenseLineDetail",
+                    "Amount": "100",
+                    "AccountBasedExpenseLineDetail": {"AccountRef": {"value": "99"}},
+                }
+            ],
+        }
+        reviewed_hash = compute_entity_hash(reviewed)
+        reasons = check_stale("5", reviewed_hash, current)
+        assert len(reasons) >= 1
+
+    def test_line_id_changed_makes_stale(self) -> None:
+        reviewed = {
+            "Id": "1",
+            "SyncToken": "5",
+            "TotalAmt": "100",
+            "TxnDate": "2024-01-01",
+            "Line": [
+                {
+                    "Id": "1",
+                    "DetailType": "AccountBasedExpenseLineDetail",
+                    "Amount": "100",
+                    "AccountBasedExpenseLineDetail": {"AccountRef": {"value": "50"}},
+                }
+            ],
+        }
+        current = {
+            "Id": "1",
+            "SyncToken": "5",
+            "TotalAmt": "100",
+            "TxnDate": "2024-01-01",
+            "Line": [
+                {
+                    "Id": "2",
+                    "DetailType": "AccountBasedExpenseLineDetail",
+                    "Amount": "100",
+                    "AccountBasedExpenseLineDetail": {"AccountRef": {"value": "50"}},
+                }
+            ],
+        }
+        reviewed_hash = compute_entity_hash(reviewed)
+        reasons = check_stale("5", reviewed_hash, current)
+        assert len(reasons) >= 1
+
 
 # ---------------------------------------------------------------------------
 # Security

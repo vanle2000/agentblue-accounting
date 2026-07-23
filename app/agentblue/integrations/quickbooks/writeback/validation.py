@@ -8,16 +8,34 @@ from typing import Any
 
 
 def compute_entity_hash(entity: dict[str, Any]) -> str:
-    """Compute a stable hash of key transaction fields.
+    """Compute a stable hash of material transaction fields.
 
-    Used for stale-state detection.
+    Includes line IDs and structure for stale-state detection.
     """
+    lines = entity.get("Line", [])
+    line_fingerprints = []
+    for line in lines:
+        line_fp = {
+            "id": line.get("Id", ""),
+            "detail_type": line.get("DetailType", ""),
+            "amount": str(line.get("Amount", "")),
+        }
+        # Include account ref from line detail
+        detail_key = line.get("DetailType", "")
+        detail = line.get(detail_key, {})
+        if isinstance(detail, dict):
+            acct_ref = detail.get("AccountRef", {})
+            line_fp["account_ref"] = str(acct_ref.get("value", ""))
+        line_fingerprints.append(line_fp)
+
     snapshot = {
         "Id": entity.get("Id"),
         "SyncToken": entity.get("SyncToken"),
         "TotalAmt": entity.get("TotalAmt"),
         "TxnDate": entity.get("TxnDate"),
-        "Line_count": len(entity.get("Line", [])),
+        "CurrencyRef": str(entity.get("CurrencyRef", "")),
+        "line_count": len(lines),
+        "lines": line_fingerprints,
     }
     raw = json.dumps(snapshot, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -45,3 +63,24 @@ def check_stale(
         reasons.append("transaction_hash_changed")
 
     return reasons
+
+
+def find_target_line(
+    entity: dict[str, Any],
+    target_line_id: str,
+) -> dict[str, Any] | None:
+    """Find a specific line by ID in the entity."""
+    for line in entity.get("Line", []):
+        if str(line.get("Id", "")) == target_line_id:
+            return dict(line)
+    return None
+
+
+def extract_line_account_ref(line: dict[str, Any]) -> str:
+    """Extract the account reference from a line."""
+    detail_key = line.get("DetailType", "")
+    detail = line.get(detail_key, {})
+    if isinstance(detail, dict):
+        ref = detail.get("AccountRef", {})
+        return str(ref.get("value", ""))
+    return ""
