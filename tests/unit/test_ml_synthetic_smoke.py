@@ -61,12 +61,13 @@ def _generate_synthetic_dataset() -> list[dict[str, Any]]:
     ]
     vendors_new = [("CloudTech Inc", "cloudtech")]
 
-    # Account classes with distribution (total: 101 rows including dupes)
+    # Account classes with distribution (total: ~200 rows including dupes)
+    # Enough for 70/15/15 temporal splits with calibration support
     account_classes = [
-        ("acct_repairs", 38),       # most common
-        ("acct_supplies", 30),      # common
-        ("acct_software", 20),      # moderate
-        ("acct_office_rare", 8),    # rare
+        ("acct_repairs", 55),       # most common
+        ("acct_supplies", 50),      # common
+        ("acct_software", 45),      # moderate
+        ("acct_office_rare", 20),   # rare (enough for calibration CV=5)
     ]
 
     transaction_types = ["Purchase", "Expense", "Bill"]
@@ -138,8 +139,8 @@ def _generate_synthetic_dataset() -> list[dict[str, Any]]:
             rows.append(row)
 
     # Add duplicate transaction versions (same txn_id, different dates)
-    # Take first 5 transactions and create version 2
-    for i in range(5):
+    # Take first 10 transactions and create version 2
+    for i in range(10):
         original = rows[i]
         dup_date = date.fromisoformat(original["transaction_date"]) + timedelta(days=30)
         dup_row = dict(original)
@@ -207,7 +208,7 @@ class TestSyntheticDatasetCreation:
 
         counts = Counter(r["account_quickbooks_id"] for r in synthetic_dataset)
         rare_count = counts.get("acct_office_rare", 0)
-        assert 5 <= rare_count <= 10
+        assert 10 <= rare_count <= 25
 
     def test_dataset_has_high_value_transactions(
         self, synthetic_dataset: list[dict[str, Any]]

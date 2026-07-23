@@ -70,6 +70,9 @@ ignore = [
 "app/agentblue/ml/inference/predictor.py" = ["N803", "N806"]
 "tests/unit/test_ml_*.py" = ["N806", "N803", "E501"]
 "tests/unit/test_ml_synthetic_smoke.py" = ["N806", "N803", "E501", "SIM300"]
+"tests/unit/test_categorization_extended.py" = ["N806", "N803", "E501", "SIM300", "B017", "C901", "I001"]
+"tests/unit/test_sync_writeback_extended.py" = ["N806", "N803", "E501", "SIM300", "B017", "C901", "I001"]
+"tests/unit/test_infrastructure_extended.py" = ["N806", "N803", "E501", "SIM300", "B017", "C901", "I001"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["agentblue"]
