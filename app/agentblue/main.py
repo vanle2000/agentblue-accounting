@@ -24,6 +24,7 @@ from agentblue.integrations.quickbooks.sync.router import (
     router as quickbooks_sync_router,
 )
 from agentblue.logging import configure_logging
+from agentblue.ml.router import router as ml_router
 
 
 @asynccontextmanager
@@ -66,6 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(quickbooks_sync_router)
     app.include_router(quickbooks_accounting_router)
     app.include_router(categorization_router)
+    app.include_router(ml_router)
     return app
 
 
