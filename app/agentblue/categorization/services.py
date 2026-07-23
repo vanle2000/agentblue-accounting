@@ -18,9 +18,9 @@ logger = structlog.get_logger(__name__)
 class CategorizationService:
     """Application-level categorization operations."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, api_client: Any = None) -> None:
         self._repo = CategorizationRepository(session)
-        self._engine = CategorizationEngine(session)
+        self._engine = CategorizationEngine(session, api_client)
         self._session = session
 
     async def run_categorization(
@@ -36,6 +36,7 @@ class CategorizationService:
         counts = {
             "total": 0,
             "recommended": 0,
+            "preselected": 0,
             "needs_review": 0,
             "failed": 0,
         }
@@ -50,10 +51,12 @@ class CategorizationService:
                     txn_id,
                     recategorize=recategorize,
                 )
-                await self._engine.persist_result(realm_id, result, qb_id)
+                await self._engine.persist_result(realm_id, result, qb_id, txn)
                 counts["total"] += 1
 
-                if result.status == CategorizationStatus.RECOMMENDED:
+                if result.status == CategorizationStatus.PRESELECTED:
+                    counts["preselected"] += 1
+                elif result.status == CategorizationStatus.RECOMMENDED:
                     counts["recommended"] += 1
                 elif result.status == CategorizationStatus.NEEDS_REVIEW:
                     counts["needs_review"] += 1
@@ -71,6 +74,7 @@ class CategorizationService:
             status="COMPLETED",
             transaction_count=counts["total"],
             recommended_count=counts["recommended"],
+            preselected_count=counts["preselected"],
             needs_review_count=counts["needs_review"],
             failed_count=counts["failed"],
         )

@@ -1,4 +1,4 @@
-"""Categorization FastAPI router."""
+"""Categorization FastAPI router with Level 2 Assisted Automation."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import structlog
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agentblue.categorization.constants import SUPPORTED_WRITEBACK_TYPES
 from agentblue.categorization.exceptions import (
     CategorizationNotFoundError,
     InvalidCategorizationStateError,
@@ -16,6 +17,7 @@ from agentblue.categorization.models import CategorizationRule
 from agentblue.categorization.repository import CategorizationRepository
 from agentblue.categorization.review import ReviewService
 from agentblue.categorization.schemas import (
+    ApproveAndApplyRequest,
     CategorizationDetail,
     CategorizationRunRequest,
     CategorizationRunResponse,
@@ -25,6 +27,7 @@ from agentblue.categorization.schemas import (
     ReviewResponse,
     RuleCreateRequest,
     RuleResponse,
+    SupportedWriteBackResponse,
 )
 from agentblue.categorization.services import CategorizationService
 from agentblue.db.session import get_db
@@ -37,15 +40,15 @@ router = APIRouter(
 )
 
 
+# --- Runs ---
+
+
 @router.post("/runs", response_model=CategorizationRunResponse)
 async def create_run(
     body: CategorizationRunRequest,
     db: AsyncSession = Depends(get_db),
 ) -> CategorizationRunResponse:
-    """Run categorization on a set of transactions."""
     service = CategorizationService(db)
-    # In production, transactions would be fetched from Stage 5
-    # For now, accept empty list and return the run structure
     result = await service.run_categorization(
         body.realm_id,
         [],
@@ -69,9 +72,14 @@ async def get_run(
         "status": run.status,
         "transaction_count": run.transaction_count,
         "recommended_count": run.recommended_count,
+        "preselected_count": run.preselected_count,
         "needs_review_count": run.needs_review_count,
+        "applied_count": run.applied_count,
         "failed_count": run.failed_count,
     }
+
+
+# --- Categorizations ---
 
 
 @router.get("/categorizations", response_model=list[CategorizationSummary])
@@ -87,6 +95,7 @@ async def list_categorizations(
         CategorizationSummary(
             id=c.id,
             transaction_quickbooks_id=c.transaction_quickbooks_id,
+            transaction_type=c.transaction_type or "",
             status=c.status,
             recommended_account_quickbooks_id=c.recommended_account_quickbooks_id or "",
             confidence_score=str(c.confidence_score),
@@ -111,6 +120,7 @@ async def get_categorization(
     return CategorizationDetail(
         id=cat.id,
         transaction_quickbooks_id=cat.transaction_quickbooks_id,
+        transaction_type=cat.transaction_type or "",
         status=cat.status,
         recommended_account_quickbooks_id=cat.recommended_account_quickbooks_id or "",
         confidence_score=str(cat.confidence_score),
@@ -119,11 +129,55 @@ async def get_categorization(
         requires_review=cat.requires_review,
         explanation_summary=cat.explanation_summary or "",
         engine_version=cat.engine_version,
+        feature_version=cat.feature_version,
+        source_sync_token=cat.source_sync_token or "",
     )
 
 
-@router.post("/categorizations/{cat_id}/review", response_model=ReviewResponse)
-async def review_categorization(
+# --- Approve and Apply ---
+
+
+@router.post(
+    "/categorizations/{cat_id}/approve-and-apply",
+    response_model=ReviewResponse,
+)
+async def approve_and_apply(
+    realm_id: str = Query(),
+    cat_id: str = "",
+    body: ApproveAndApplyRequest = Body(...),
+    db: AsyncSession = Depends(get_db),
+) -> ReviewResponse:
+    service = ReviewService(db)
+    try:
+        result = await service.approve_and_apply(
+            realm_id,
+            cat_id,
+            reviewer=body.reviewer,
+            selected_account_quickbooks_id=body.selected_account_quickbooks_id,
+            expected_categorization_version=body.expected_categorization_version,
+            expected_transaction_sync_token=body.expected_transaction_sync_token,
+            review_note=body.review_note,
+            idempotency_key=body.idempotency_key,
+        )
+        return ReviewResponse(
+            status=result.get("status", "APPROVED"),
+            account=result.get("account", ""),
+            application_id=result.get("application_id", ""),
+            idempotent=result.get("idempotent", False),
+        )
+    except CategorizationNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except InvalidCategorizationStateError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except (InvalidTargetAccountError, ReviewConflictError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+# --- Reject / Defer ---
+
+
+@router.post("/categorizations/{cat_id}/reject", response_model=ReviewResponse)
+async def reject_categorization(
     realm_id: str = Query(),
     cat_id: str = "",
     body: ReviewRequest = Body(...),
@@ -134,18 +188,39 @@ async def review_categorization(
         result = await service.review(
             realm_id,
             cat_id,
-            decision=body.decision,
+            decision="REJECT",
             reviewer=body.reviewer,
-            selected_account_quickbooks_id=body.selected_account_quickbooks_id,
             review_note=body.review_note,
         )
-        return ReviewResponse(**result)
+        return ReviewResponse(status=result["status"])
     except CategorizationNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc
-    except (InvalidCategorizationStateError, ReviewConflictError) as exc:
+    except InvalidCategorizationStateError as exc:
         raise HTTPException(409, str(exc)) from exc
-    except InvalidTargetAccountError as exc:
-        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/categorizations/{cat_id}/defer", response_model=ReviewResponse)
+async def defer_categorization(
+    realm_id: str = Query(),
+    cat_id: str = "",
+    body: ReviewRequest = Body(...),
+    db: AsyncSession = Depends(get_db),
+) -> ReviewResponse:
+    service = ReviewService(db)
+    try:
+        result = await service.review(
+            realm_id,
+            cat_id,
+            decision="DEFER",
+            reviewer=body.reviewer,
+            review_note=body.review_note,
+        )
+        return ReviewResponse(status=result["status"])
+    except CategorizationNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+# --- Rules ---
 
 
 @router.post("/rules", response_model=RuleResponse)
@@ -195,6 +270,9 @@ async def list_rules(
     ]
 
 
+# --- Review queue ---
+
+
 @router.get("/review-queue", response_model=ReviewQueueResponse)
 async def review_queue(
     realm_id: str = Query(),
@@ -208,6 +286,7 @@ async def review_queue(
             CategorizationSummary(
                 id=c.id,
                 transaction_quickbooks_id=c.transaction_quickbooks_id,
+                transaction_type=c.transaction_type or "",
                 status=c.status,
                 recommended_account_quickbooks_id=(c.recommended_account_quickbooks_id or ""),
                 confidence_score=str(c.confidence_score),
@@ -219,4 +298,29 @@ async def review_queue(
         ],
         total=len(items),
         limit=limit,
+    )
+
+
+# --- Supported write-back types ---
+
+
+@router.get("/supported-writeback-types", response_model=SupportedWriteBackResponse)
+async def supported_writeback_types() -> SupportedWriteBackResponse:
+    all_types = {
+        "Purchase",
+        "Bill",
+        "Deposit",
+        "Transfer",
+        "JournalEntry",
+        "Invoice",
+        "SalesReceipt",
+        "Payment",
+        "CreditMemo",
+        "RefundReceipt",
+        "BillPayment",
+        "VendorCredit",
+    }
+    return SupportedWriteBackResponse(
+        supported_types=sorted(SUPPORTED_WRITEBACK_TYPES),
+        deferred_types=sorted(all_types - SUPPORTED_WRITEBACK_TYPES),
     )

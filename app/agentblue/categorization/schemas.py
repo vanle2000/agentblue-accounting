@@ -18,6 +18,7 @@ class CategorizationRunResponse(BaseModel):
     run_id: str
     total: int = 0
     recommended: int = 0
+    preselected: int = 0
     needs_review: int = 0
     failed: int = 0
 
@@ -25,6 +26,7 @@ class CategorizationRunResponse(BaseModel):
 class CategorizationSummary(BaseModel):
     id: str
     transaction_quickbooks_id: str
+    transaction_type: str = ""
     status: str
     recommended_account_quickbooks_id: str = ""
     confidence_score: str = "0"
@@ -36,7 +38,19 @@ class CategorizationSummary(BaseModel):
 class CategorizationDetail(CategorizationSummary):
     explanation_summary: str = ""
     engine_version: str = ""
+    feature_version: str = ""
+    source_sync_token: str = ""
     candidates: list[dict[str, Any]] = []
+
+
+class ApproveAndApplyRequest(BaseModel):
+    realm_id: str
+    reviewer: str
+    selected_account_quickbooks_id: str = ""
+    expected_categorization_version: int = 0
+    expected_transaction_sync_token: str = ""
+    review_note: str = ""
+    idempotency_key: str
 
 
 class ReviewRequest(BaseModel):
@@ -49,6 +63,8 @@ class ReviewRequest(BaseModel):
 class ReviewResponse(BaseModel):
     status: str
     account: str = ""
+    application_id: str = ""
+    idempotent: bool = False
 
 
 class RuleCreateRequest(BaseModel):
@@ -75,3 +91,18 @@ class ReviewQueueResponse(BaseModel):
     items: list[CategorizationSummary]
     total: int
     limit: int
+
+
+class ApplicationResponse(BaseModel):
+    id: str
+    categorization_id: str
+    transaction_quickbooks_id: str
+    status: str
+    idempotency_key: str
+    approved_by: str
+    error_summary: str = ""
+
+
+class SupportedWriteBackResponse(BaseModel):
+    supported_types: list[str]
+    deferred_types: list[str]

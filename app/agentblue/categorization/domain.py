@@ -9,11 +9,20 @@ from typing import Any
 
 
 class CategorizationStatus(str, Enum):
+    """Full categorization lifecycle for Level 2 Assisted Automation."""
+
     PENDING = "PENDING"
+    ANALYZING = "ANALYZING"
     RECOMMENDED = "RECOMMENDED"
+    PRESELECTED = "PRESELECTED"
     NEEDS_REVIEW = "NEEDS_REVIEW"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
+    DEFERRED = "DEFERRED"
+    APPLYING = "APPLYING"
+    APPLIED = "APPLIED"
+    APPLY_FAILED = "APPLY_FAILED"
+    STALE = "STALE"
     SUPERSEDED = "SUPERSEDED"
 
 
@@ -59,6 +68,17 @@ class ConfidenceBand(str, Enum):
     NONE = "NONE"
 
 
+class ApplicationStatus(str, Enum):
+    """QuickBooks write-back application status."""
+
+    PENDING = "PENDING"
+    IN_PROGRESS = "IN_PROGRESS"
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+    TIMED_OUT = "TIMED_OUT"
+    STALE = "STALE"
+
+
 class ReasonCode(str, Enum):
     EXACT_APPROVED_VENDOR_MATCH = "EXACT_APPROVED_VENDOR_MATCH"
     EXACT_APPROVED_DESCRIPTION_MATCH = "EXACT_APPROVED_DESCRIPTION_MATCH"
@@ -74,6 +94,9 @@ class ReasonCode(str, Enum):
     INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
     CONFLICTING_RULES = "CONFLICTING_RULES"
     MANUAL_OVERRIDE = "MANUAL_OVERRIDE"
+    SCORE_BELOW_THRESHOLD = "SCORE_BELOW_THRESHOLD"
+    AMBIGUITY_MARGIN_NOT_MET = "AMBIGUITY_MARGIN_NOT_MET"
+    UNSUPPORTED_WRITE_BACK = "UNSUPPORTED_WRITE_BACK"
 
 
 @dataclass(frozen=True)
@@ -123,3 +146,15 @@ class CategorizationResult:
     candidates: list[RecommendationCandidate] = field(default_factory=list)
     explanation: dict[str, Any] = field(default_factory=dict)
     requires_review: bool = True
+    preselected: bool = False
+
+
+@dataclass
+class AssistedAutomationGate:
+    """Result of the assisted-automation gate check."""
+
+    passed: bool
+    reason_codes: list[str] = field(default_factory=list)
+    top_score: Decimal = Decimal("0")
+    second_score: Decimal = Decimal("0")
+    ambiguity_gap: Decimal = Decimal("0")

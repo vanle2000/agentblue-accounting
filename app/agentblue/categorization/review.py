@@ -1,4 +1,4 @@
-"""Human review workflow."""
+"""Human review workflow with approve-and-apply."""
 
 from __future__ import annotations
 
@@ -20,6 +20,11 @@ from agentblue.categorization.repository import CategorizationRepository
 from agentblue.integrations.quickbooks.accounting.repository import (
     AccountingRepository,
 )
+from agentblue.integrations.quickbooks.writeback.exceptions import (
+    StaleSyncTokenError,
+    UnsupportedEntityTypeError,
+)
+from agentblue.integrations.quickbooks.writeback.service import WriteBackService
 
 logger = structlog.get_logger(__name__)
 
@@ -27,10 +32,11 @@ logger = structlog.get_logger(__name__)
 class ReviewService:
     """Handles human review actions for categorizations."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, api_client: Any = None) -> None:
         self._repo = CategorizationRepository(session)
         self._acct_repo = AccountingRepository(session)
         self._session = session
+        self._api_client = api_client
 
     async def review(
         self,
@@ -42,7 +48,7 @@ class ReviewService:
         selected_account_quickbooks_id: str = "",
         review_note: str = "",
     ) -> dict[str, Any]:
-        """Process a review action."""
+        """Process a review action (without write-back)."""
         if not reviewer:
             raise ReviewConflictError("Reviewer identity is required.")
 
@@ -50,8 +56,8 @@ class ReviewService:
         if cat is None:
             raise CategorizationNotFoundError(f"Categorization {categorization_id} not found.")
 
-        if cat.status == "APPROVED":
-            raise InvalidCategorizationStateError("Categorization is already approved.")
+        if cat.status in ("APPROVED", "APPLIED"):
+            raise InvalidCategorizationStateError("Categorization is already approved/applied.")
 
         review_decision = ReviewDecision(decision)
 
@@ -77,6 +83,148 @@ class ReviewService:
 
         raise ReviewConflictError(f"Unknown decision: {decision}")
 
+    async def approve_and_apply(
+        self,
+        realm_id: str,
+        categorization_id: str,
+        *,
+        reviewer: str,
+        selected_account_quickbooks_id: str = "",
+        expected_categorization_version: int = 0,
+        expected_transaction_sync_token: str = "",
+        review_note: str = "",
+        idempotency_key: str = "",
+    ) -> dict[str, Any]:
+        """Approve and apply categorization to QuickBooks.
+
+        Two-phase: approve locally, then apply to QuickBooks.
+        """
+        if not reviewer:
+            raise ReviewConflictError("Reviewer identity is required.")
+
+        cat = await self._repo.get_categorization(realm_id, categorization_id)
+        if cat is None:
+            raise CategorizationNotFoundError(f"Categorization {categorization_id} not found.")
+
+        if cat.status in ("APPROVED", "APPLIED", "APPLYING"):
+            # Check idempotency
+            if idempotency_key:
+                existing_app = await self._repo.get_application_by_idempotency_key(idempotency_key)
+                if existing_app:
+                    return {
+                        "status": existing_app.status,
+                        "application_id": existing_app.id,
+                        "idempotent": True,
+                    }
+            raise InvalidCategorizationStateError(f"Categorization already in state {cat.status}.")
+
+        # Validate version
+        if expected_categorization_version and expected_categorization_version != cat.version:
+            raise ReviewConflictError(
+                f"Version mismatch: expected {expected_categorization_version}, got {cat.version}"
+            )
+
+        # Validate selected account
+        acct_qb_id = selected_account_quickbooks_id or cat.recommended_account_quickbooks_id
+        if not acct_qb_id:
+            raise InvalidTargetAccountError("No account selected.")
+
+        acct = await self._acct_repo.get_account_by_quickbooks_id(realm_id, acct_qb_id)
+        if acct is None:
+            raise InvalidTargetAccountError("Selected account not found.")
+        if acct.source_deleted:
+            raise InvalidTargetAccountError("Cannot select a deleted account.")
+
+        # Phase 1: Record approval locally
+        cat.status = "APPROVED"
+        cat.approved_account_quickbooks_id = acct_qb_id
+        cat.reviewed_at = datetime.now(UTC)
+        cat.reviewed_by = reviewer
+        cat.approved_at = datetime.now(UTC)
+        cat.requires_review = False
+        cat.version += 1
+
+        await self._repo.append_decision(
+            cat.id,
+            realm_id,
+            decision="APPROVE",
+            reviewer=reviewer,
+            selected_account_id=acct.id,
+            review_note=review_note,
+            engine_version=ENGINE_VERSION,
+            categorization_version=cat.version,
+            recommendation_snapshot={
+                "recommended": cat.recommended_account_quickbooks_id,
+                "selected": acct_qb_id,
+                "score": str(cat.confidence_score),
+            },
+        )
+        await self._session.commit()
+
+        result: dict[str, Any] = {
+            "status": "APPROVED",
+            "categorization_id": cat.id,
+            "account": acct_qb_id,
+        }
+
+        # Phase 2: Apply to QuickBooks if supported
+        can_writeback = WriteBackService.is_supported_type(cat.transaction_type or "")
+
+        if can_writeback and idempotency_key:
+            cat.status = "APPLYING"
+            await self._session.commit()
+
+            writeback = WriteBackService(self._session, self._api_client)
+            try:
+                wb_result = await writeback.apply_categorization(
+                    realm_id=realm_id,
+                    transaction_quickbooks_id=cat.transaction_quickbooks_id,
+                    transaction_type=cat.transaction_type or "Purchase",
+                    selected_account_quickbooks_id=acct_qb_id,
+                    reviewed_sync_token=cat.source_sync_token or "",
+                    reviewed_transaction_hash=cat.source_transaction_hash or "",
+                    approved_by=reviewer,
+                    idempotency_key=idempotency_key,
+                )
+                result["writeback"] = wb_result
+
+                if wb_result.get("status") == "SUCCESS" or wb_result.get("status") == "SIMULATED":
+                    cat.status = "APPLIED"
+                else:
+                    cat.status = "APPLY_FAILED"
+
+            except StaleSyncTokenError as exc:
+                cat.status = "STALE"
+                result["error"] = str(exc)
+            except UnsupportedEntityTypeError as exc:
+                cat.status = "APPROVED"  # Revert to approved, can't apply
+                result["error"] = str(exc)
+            except Exception as exc:
+                cat.status = "APPLY_FAILED"
+                result["error"] = str(exc)[:200]
+                logger.warning(
+                    "apply_failed",
+                    categorization_id=cat.id,
+                    error=str(exc)[:200],
+                )
+
+            await self._session.commit()
+
+        # Create training label on successful approval
+        await self._repo.create_training_label(
+            realm_id=realm_id,
+            transaction_id=cat.transaction_id,
+            transaction_quickbooks_id=cat.transaction_quickbooks_id,
+            selected_account_quickbooks_id=acct_qb_id,
+            label_source="APPROVE",
+            approved_by=reviewer,
+            engine_version=ENGINE_VERSION,
+            feature_snapshot={},
+        )
+        await self._session.commit()
+
+        return result
+
     async def _approve(self, cat: Any, realm_id: str, reviewer: str, note: str) -> dict[str, Any]:
         acct_qb_id = cat.recommended_account_quickbooks_id
         if not acct_qb_id:
@@ -92,6 +240,7 @@ class ReviewService:
         cat.approved_account_quickbooks_id = acct_qb_id
         cat.reviewed_at = datetime.now(UTC)
         cat.reviewed_by = reviewer
+        cat.approved_at = datetime.now(UTC)
         cat.requires_review = False
 
         await self._repo.append_decision(
@@ -102,14 +251,12 @@ class ReviewService:
             selected_account_id=acct.id,
             review_note=note,
             engine_version=ENGINE_VERSION,
+            categorization_version=cat.version,
             recommendation_snapshot={
                 "recommended": acct_qb_id,
                 "score": str(cat.confidence_score),
             },
         )
-
-        # Update vendor mapping
-        # Vendor mapping updated on approval
 
         await self._repo.create_training_label(
             realm_id=realm_id,
@@ -145,6 +292,7 @@ class ReviewService:
         cat.recommendation_source = "MANUAL_SELECTION"
         cat.reviewed_at = datetime.now(UTC)
         cat.reviewed_by = reviewer
+        cat.approved_at = datetime.now(UTC)
         cat.requires_review = False
 
         await self._repo.append_decision(
@@ -156,6 +304,7 @@ class ReviewService:
             previous_account_id=previous,
             review_note=note,
             engine_version=ENGINE_VERSION,
+            categorization_version=cat.version,
             recommendation_snapshot={
                 "previous": previous,
                 "selected": account_qb_id,
@@ -188,12 +337,13 @@ class ReviewService:
             reviewer=reviewer,
             review_note=note,
             engine_version=ENGINE_VERSION,
+            categorization_version=cat.version,
             recommendation_snapshot={},
         )
         return {"status": "REJECTED"}
 
     async def _defer(self, cat: Any, realm_id: str, reviewer: str, note: str) -> dict[str, Any]:
-        cat.status = "NEEDS_REVIEW"
+        cat.status = "DEFERRED"
         cat.reviewed_at = datetime.now(UTC)
         cat.reviewed_by = reviewer
 
@@ -204,6 +354,7 @@ class ReviewService:
             reviewer=reviewer,
             review_note=note,
             engine_version=ENGINE_VERSION,
+            categorization_version=cat.version,
             recommendation_snapshot={},
         )
-        return {"status": "NEEDS_REVIEW"}
+        return {"status": "DEFERRED"}

@@ -16,6 +16,7 @@ from agentblue.categorization.models import (
     CategorizationRule,
     CategorizationRun,
     CategorizationTrainingLabel,
+    QuickBooksCategorizationApplication,
     TransactionCategorization,
     VendorMapping,
 )
@@ -79,7 +80,11 @@ class CategorizationRepository:
         status: str = "COMPLETED",
         transaction_count: int = 0,
         recommended_count: int = 0,
+        preselected_count: int = 0,
         needs_review_count: int = 0,
+        approved_count: int = 0,
+        applied_count: int = 0,
+        apply_failed_count: int = 0,
         failed_count: int = 0,
         error_summary: str = "",
     ) -> None:
@@ -91,7 +96,11 @@ class CategorizationRepository:
             run.completed_at = _utcnow()
             run.transaction_count = transaction_count
             run.recommended_count = recommended_count
+            run.preselected_count = preselected_count
             run.needs_review_count = needs_review_count
+            run.approved_count = approved_count
+            run.applied_count = applied_count
+            run.apply_failed_count = apply_failed_count
             run.failed_count = failed_count
             run.error_summary = error_summary or ""
 
@@ -131,27 +140,37 @@ class CategorizationRepository:
         transaction_id: str,
         transaction_quickbooks_id: str,
         *,
+        transaction_type: str = "",
         status: str,
         recommended_account_quickbooks_id: str = "",
         confidence_score: Decimal = Decimal("0"),
         confidence_band: str = "NONE",
         recommendation_source: str = "FEATURE_RANKING",
         engine_version: str = "1.0.0",
+        feature_version: str = "1.0",
         rule_id: str = "",
         explanation_summary: str = "",
         requires_review: bool = True,
+        source_sync_token: str = "",
+        source_transaction_hash: str = "",
     ) -> TransactionCategorization:
         existing = await self.get_categorization_by_txn(realm_id, transaction_id)
         if existing:
             existing.status = status
+            existing.transaction_type = transaction_type or existing.transaction_type
             existing.recommended_account_quickbooks_id = recommended_account_quickbooks_id
             existing.confidence_score = confidence_score
             existing.confidence_band = confidence_band
             existing.recommendation_source = recommendation_source
             existing.engine_version = engine_version
+            existing.feature_version = feature_version
             existing.rule_id = rule_id
             existing.explanation_summary = explanation_summary
             existing.requires_review = requires_review
+            existing.source_sync_token = source_sync_token or existing.source_sync_token
+            existing.source_transaction_hash = (
+                source_transaction_hash or existing.source_transaction_hash
+            )
             existing.version += 1
             return existing
 
@@ -159,15 +178,19 @@ class CategorizationRepository:
             realm_id=realm_id,
             transaction_id=transaction_id,
             transaction_quickbooks_id=transaction_quickbooks_id,
+            transaction_type=transaction_type,
             status=status,
             recommended_account_quickbooks_id=recommended_account_quickbooks_id,
             confidence_score=confidence_score,
             confidence_band=confidence_band,
             recommendation_source=recommendation_source,
             engine_version=engine_version,
+            feature_version=feature_version,
             rule_id=rule_id,
             explanation_summary=explanation_summary,
             requires_review=requires_review,
+            source_sync_token=source_sync_token,
+            source_transaction_hash=source_transaction_hash,
         )
         self._session.add(cat)
         await self._session.flush()
@@ -181,7 +204,6 @@ class CategorizationRepository:
         realm_id: str,
         candidates: list[dict[str, Any]],
     ) -> None:
-        # Delete existing recommendations for this categorization
         stmt = select(CategorizationRecommendation).where(
             CategorizationRecommendation.categorization_id == categorization_id,
         )
@@ -217,6 +239,7 @@ class CategorizationRepository:
         previous_account_id: str = "",
         review_note: str = "",
         engine_version: str = "1.0.0",
+        categorization_version: int = 1,
         recommendation_snapshot: dict[str, Any] | None = None,
     ) -> CategorizationDecision:
         dec = CategorizationDecision(
@@ -227,6 +250,7 @@ class CategorizationRepository:
             previous_account_id=previous_account_id or None,
             reviewer=reviewer,
             review_note=review_note or None,
+            categorization_version=categorization_version,
             engine_version=engine_version,
             recommendation_snapshot=recommendation_snapshot or {},
         )
@@ -302,6 +326,66 @@ class CategorizationRepository:
         await self._session.flush()
         return label
 
+    # --- Application records ---
+
+    async def create_application(
+        self,
+        categorization_id: str,
+        realm_id: str,
+        transaction_id: str,
+        transaction_quickbooks_id: str,
+        transaction_type: str,
+        selected_account_quickbooks_id: str,
+        idempotency_key: str,
+        source_sync_token: str,
+        source_transaction_hash: str,
+        approved_by: str,
+    ) -> QuickBooksCategorizationApplication:
+        # Check idempotency
+        stmt = select(QuickBooksCategorizationApplication).where(
+            QuickBooksCategorizationApplication.idempotency_key == idempotency_key,
+        )
+        result = await self._session.execute(stmt)
+        existing = result.scalar_one_or_none()
+        if existing:
+            return existing
+
+        app = QuickBooksCategorizationApplication(
+            categorization_id=categorization_id,
+            realm_id=realm_id,
+            transaction_id=transaction_id,
+            transaction_quickbooks_id=transaction_quickbooks_id,
+            transaction_type=transaction_type,
+            selected_account_quickbooks_id=selected_account_quickbooks_id,
+            idempotency_key=idempotency_key,
+            source_sync_token=source_sync_token,
+            source_transaction_hash=source_transaction_hash,
+            approved_by=approved_by,
+            status="PENDING",
+        )
+        self._session.add(app)
+        await self._session.flush()
+        return app
+
+    async def get_application(
+        self, realm_id: str, application_id: str
+    ) -> QuickBooksCategorizationApplication | None:
+        stmt = select(QuickBooksCategorizationApplication).where(
+            QuickBooksCategorizationApplication.realm_id == realm_id,
+            QuickBooksCategorizationApplication.id == application_id,
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_application_by_idempotency_key(
+        self, idempotency_key: str
+    ) -> QuickBooksCategorizationApplication | None:
+        stmt = select(QuickBooksCategorizationApplication).where(
+            QuickBooksCategorizationApplication.idempotency_key == idempotency_key,
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
     # --- Review queue ---
 
     async def get_review_queue(
@@ -315,7 +399,13 @@ class CategorizationRepository:
             .where(
                 TransactionCategorization.realm_id == realm_id,
                 TransactionCategorization.requires_review.is_(True),
-                TransactionCategorization.status.in_(["NEEDS_REVIEW", "RECOMMENDED"]),
+                TransactionCategorization.status.in_(
+                    [
+                        "NEEDS_REVIEW",
+                        "RECOMMENDED",
+                        "PRESELECTED",
+                    ]
+                ),
             )
             .order_by(TransactionCategorization.created_at)
             .limit(limit)

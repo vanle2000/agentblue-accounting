@@ -1,4 +1,4 @@
-"""Categorization tables — Stage 7.
+"""Categorization tables — Stage 7 Level 2.
 
 Revision ID: 0003_categorization
 Revises: 0002_qb_accounting
@@ -29,10 +29,7 @@ def upgrade() -> None:
         sa.Column("conditions", postgresql.JSONB, nullable=False),
         sa.Column("target_account_quickbooks_id", sa.String(50), nullable=False),
         sa.Column(
-            "target_account_id",
-            sa.String(36),
-            sa.ForeignKey("qb_account.id"),
-            nullable=True,
+            "target_account_id", sa.String(36), sa.ForeignKey("qb_account.id"), nullable=True
         ),
         sa.Column("minimum_confidence", sa.Numeric(3, 2), nullable=False, server_default="0"),
         sa.Column("stop_processing", sa.Boolean, nullable=False, server_default="false"),
@@ -59,7 +56,11 @@ def upgrade() -> None:
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("transaction_count", sa.Integer, nullable=False, server_default="0"),
         sa.Column("recommended_count", sa.Integer, nullable=False, server_default="0"),
+        sa.Column("preselected_count", sa.Integer, nullable=False, server_default="0"),
         sa.Column("needs_review_count", sa.Integer, nullable=False, server_default="0"),
+        sa.Column("approved_count", sa.Integer, nullable=False, server_default="0"),
+        sa.Column("applied_count", sa.Integer, nullable=False, server_default="0"),
+        sa.Column("apply_failed_count", sa.Integer, nullable=False, server_default="0"),
         sa.Column("failed_count", sa.Integer, nullable=False, server_default="0"),
         sa.Column("error_summary", sa.Text, nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -73,21 +74,17 @@ def upgrade() -> None:
         sa.Column("realm_id", sa.String(50), nullable=False),
         sa.Column("transaction_id", sa.String(36), nullable=False),
         sa.Column("transaction_quickbooks_id", sa.String(50), nullable=False),
+        sa.Column("transaction_type", sa.String(50), nullable=False, server_default=""),
         sa.Column("status", sa.String(20), nullable=False, server_default="PENDING"),
         sa.Column(
-            "recommended_account_id",
-            sa.String(36),
-            sa.ForeignKey("qb_account.id"),
-            nullable=True,
+            "recommended_account_id", sa.String(36), sa.ForeignKey("qb_account.id"), nullable=True
         ),
         sa.Column("recommended_account_quickbooks_id", sa.String(50), nullable=True),
         sa.Column(
-            "approved_account_id",
-            sa.String(36),
-            sa.ForeignKey("qb_account.id"),
-            nullable=True,
+            "approved_account_id", sa.String(36), sa.ForeignKey("qb_account.id"), nullable=True
         ),
         sa.Column("approved_account_quickbooks_id", sa.String(50), nullable=True),
+        sa.Column("current_quickbooks_account_id", sa.String(50), nullable=True),
         sa.Column("confidence_score", sa.Numeric(4, 3), nullable=False, server_default="0"),
         sa.Column("confidence_band", sa.String(10), nullable=False, server_default="NONE"),
         sa.Column(
@@ -97,25 +94,25 @@ def upgrade() -> None:
             server_default="FEATURE_RANKING",
         ),
         sa.Column("engine_version", sa.String(20), nullable=False, server_default="1.0.0"),
+        sa.Column("feature_version", sa.String(20), nullable=False, server_default="1.0"),
         sa.Column(
-            "rule_id",
-            sa.String(36),
-            sa.ForeignKey("categorization_rule.id"),
-            nullable=True,
+            "rule_id", sa.String(36), sa.ForeignKey("categorization_rule.id"), nullable=True
         ),
         sa.Column("explanation_summary", sa.Text, nullable=True),
         sa.Column("requires_review", sa.Boolean, nullable=False, server_default="true"),
+        sa.Column("source_transaction_hash", sa.String(64), nullable=True),
+        sa.Column("source_sync_token", sa.String(50), nullable=True),
+        sa.Column("source_last_updated_time", sa.String(50), nullable=True),
         sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("reviewed_by", sa.String(100), nullable=True),
+        sa.Column("approved_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("version", sa.Integer, nullable=False, server_default="1"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("realm_id", "transaction_id", name="uq_categorization_transaction"),
     )
     op.create_index(
-        "ix_cat_txn_realm_status",
-        "transaction_categorization",
-        ["realm_id", "status"],
+        "ix_cat_txn_realm_status", "transaction_categorization", ["realm_id", "status"]
     )
     op.create_index(
         "ix_cat_txn_review",
@@ -134,12 +131,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("realm_id", sa.String(50), nullable=False),
-        sa.Column(
-            "account_id",
-            sa.String(36),
-            sa.ForeignKey("qb_account.id"),
-            nullable=True,
-        ),
+        sa.Column("account_id", sa.String(36), sa.ForeignKey("qb_account.id"), nullable=True),
         sa.Column("account_quickbooks_id", sa.String(50), nullable=False),
         sa.Column("rank", sa.Integer, nullable=False),
         sa.Column("score", sa.Numeric(4, 3), nullable=False, server_default="0"),
@@ -148,16 +140,11 @@ def upgrade() -> None:
         sa.Column("explanation", postgresql.JSONB, nullable=False),
         sa.Column("feature_snapshot", postgresql.JSONB, nullable=False),
         sa.Column(
-            "rule_id",
-            sa.String(36),
-            sa.ForeignKey("categorization_rule.id"),
-            nullable=True,
+            "rule_id", sa.String(36), sa.ForeignKey("categorization_rule.id"), nullable=True
         ),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint(
-            "categorization_id",
-            "account_quickbooks_id",
-            name="uq_rec_categorization_account",
+            "categorization_id", "account_quickbooks_id", name="uq_rec_categorization_account"
         ),
     )
     op.create_index(
@@ -179,19 +166,14 @@ def upgrade() -> None:
         sa.Column("realm_id", sa.String(50), nullable=False),
         sa.Column("decision", sa.String(20), nullable=False),
         sa.Column(
-            "previous_account_id",
-            sa.String(36),
-            sa.ForeignKey("qb_account.id"),
-            nullable=True,
+            "previous_account_id", sa.String(36), sa.ForeignKey("qb_account.id"), nullable=True
         ),
         sa.Column(
-            "selected_account_id",
-            sa.String(36),
-            sa.ForeignKey("qb_account.id"),
-            nullable=True,
+            "selected_account_id", sa.String(36), sa.ForeignKey("qb_account.id"), nullable=True
         ),
         sa.Column("reviewer", sa.String(100), nullable=False),
         sa.Column("review_note", sa.Text, nullable=True),
+        sa.Column("categorization_version", sa.Integer, nullable=False, server_default="1"),
         sa.Column("engine_version", sa.String(20), nullable=False),
         sa.Column("recommendation_snapshot", postgresql.JSONB, nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -207,10 +189,7 @@ def upgrade() -> None:
         sa.Column("raw_vendor_example", sa.String(500), nullable=True),
         sa.Column("vendor_quickbooks_id", sa.String(50), nullable=True),
         sa.Column(
-            "target_account_id",
-            sa.String(36),
-            sa.ForeignKey("qb_account.id"),
-            nullable=True,
+            "target_account_id", sa.String(36), sa.ForeignKey("qb_account.id"), nullable=True
         ),
         sa.Column("target_account_quickbooks_id", sa.String(50), nullable=False),
         sa.Column("source", sa.String(30), nullable=False),
@@ -228,9 +207,7 @@ def upgrade() -> None:
         ),
     )
     op.create_index(
-        "ix_vendor_realm_normalized",
-        "vendor_mapping",
-        ["realm_id", "normalized_vendor_name"],
+        "ix_vendor_realm_normalized", "vendor_mapping", ["realm_id", "normalized_vendor_name"]
     )
 
     # G. Training label
@@ -241,10 +218,7 @@ def upgrade() -> None:
         sa.Column("transaction_id", sa.String(36), nullable=False),
         sa.Column("transaction_quickbooks_id", sa.String(50), nullable=False),
         sa.Column(
-            "selected_account_id",
-            sa.String(36),
-            sa.ForeignKey("qb_account.id"),
-            nullable=True,
+            "selected_account_id", sa.String(36), sa.ForeignKey("qb_account.id"), nullable=True
         ),
         sa.Column("selected_account_quickbooks_id", sa.String(50), nullable=False),
         sa.Column("label_source", sa.String(30), nullable=False),
@@ -255,13 +229,55 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     )
     op.create_index(
-        "ix_label_realm_txn",
-        "categorization_training_label",
-        ["realm_id", "transaction_id"],
+        "ix_label_realm_txn", "categorization_training_label", ["realm_id", "transaction_id"]
     )
+
+    # H. QuickBooks categorization application
+    op.create_table(
+        "qb_categorization_application",
+        sa.Column("id", sa.String(36), primary_key=True),
+        sa.Column(
+            "categorization_id",
+            sa.String(36),
+            sa.ForeignKey("transaction_categorization.id"),
+            nullable=False,
+        ),
+        sa.Column("realm_id", sa.String(50), nullable=False),
+        sa.Column("transaction_id", sa.String(36), nullable=False),
+        sa.Column("transaction_quickbooks_id", sa.String(50), nullable=False),
+        sa.Column("transaction_type", sa.String(50), nullable=False),
+        sa.Column(
+            "selected_account_id", sa.String(36), sa.ForeignKey("qb_account.id"), nullable=True
+        ),
+        sa.Column("selected_account_quickbooks_id", sa.String(50), nullable=False),
+        sa.Column("status", sa.String(20), nullable=False, server_default="PENDING"),
+        sa.Column("idempotency_key", sa.String(100), nullable=False),
+        sa.Column("source_sync_token", sa.String(50), nullable=True),
+        sa.Column("source_transaction_hash", sa.String(64), nullable=True),
+        sa.Column("request_payload", postgresql.JSONB, nullable=True),
+        sa.Column("response_snapshot", postgresql.JSONB, nullable=True),
+        sa.Column("resulting_sync_token", sa.String(50), nullable=True),
+        sa.Column("quickbooks_request_id", sa.String(100), nullable=True),
+        sa.Column("attempt_number", sa.Integer, nullable=False, server_default="1"),
+        sa.Column("approved_by", sa.String(100), nullable=False),
+        sa.Column("approved_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("error_code", sa.String(50), nullable=True),
+        sa.Column("error_summary", sa.Text, nullable=True),
+        sa.Column("version", sa.Integer, nullable=False, server_default="1"),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.UniqueConstraint("idempotency_key", name="uq_application_idempotency_key"),
+    )
+    op.create_index(
+        "ix_app_categorization", "qb_categorization_application", ["categorization_id"]
+    )
+    op.create_index("ix_app_realm_status", "qb_categorization_application", ["realm_id", "status"])
 
 
 def downgrade() -> None:
+    op.drop_table("qb_categorization_application")
     op.drop_table("categorization_training_label")
     op.drop_table("vendor_mapping")
     op.drop_table("categorization_decision")
