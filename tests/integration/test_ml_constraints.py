@@ -395,11 +395,11 @@ class TestShadowConcurrency:
 class TestChampionPrimarySemantics:
     """Verify CHAMPION and PRIMARY are handled correctly."""
 
-    async def test_champion_is_valid_lifecycle_status(
+    async def test_champion_rejected_in_stage8(
         self,
         db_session: AsyncSession,
     ) -> None:
-        """CHAMPION is a valid lifecycle transition from SHADOW."""
+        """CHAMPION is reserved for future governance; Stage 8 rejects it."""
         registry = ModelRegistry()
         realm = f"realm-{_uid()}"
 
@@ -418,11 +418,14 @@ class TestChampionPrimarySemantics:
         m = await registry.transition_status(
             db_session, m.id, "SHADOW", actor="test"
         )
-        # CHAMPION should now be allowed (SHADOW -> CHAMPION is in the state machine).
-        m = await registry.transition_status(
-            db_session, m.id, "CHAMPION", actor="test"
-        )
-        assert m.status == "CHAMPION"
+
+        from agentblue.ml.exceptions import InvalidModelTransitionError
+
+        # CHAMPION must be rejected from SHADOW.
+        with pytest.raises(InvalidModelTransitionError):
+            await registry.transition_status(
+                db_session, m.id, "CHAMPION", actor="test"
+            )
 
     async def test_primary_rejected_as_status(
         self,

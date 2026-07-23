@@ -20,10 +20,13 @@ from agentblue.ml.models import MlModel, MlModelEvent
 logger = structlog.get_logger(__name__)
 
 # Allowed transitions: each key can transition to the set of values.
+# CHAMPION is reserved for a future governed stage and must not be
+# reachable from Stage 8.  PRIMARY is an inference mode, not a
+# lifecycle status — it is rejected explicitly below.
 _VALID_TRANSITIONS: dict[str, set[str]] = {
     ModelStatus.CANDIDATE.value: {ModelStatus.VALIDATED.value, ModelStatus.REJECTED.value},
     ModelStatus.VALIDATED.value: {ModelStatus.SHADOW.value, ModelStatus.REJECTED.value},
-    ModelStatus.SHADOW.value: {ModelStatus.RETIRED.value, ModelStatus.CHAMPION.value},
+    ModelStatus.SHADOW.value: {ModelStatus.RETIRED.value},
     ModelStatus.CHAMPION.value: {ModelStatus.RETIRED.value},
     ModelStatus.REJECTED.value: set(),
     ModelStatus.RETIRED.value: set(),
@@ -144,8 +147,9 @@ class ModelRegistry:
     ) -> MlModel:
         """Transition a model to a new status.
 
-        Validates the transition against the allowed state machine.  Rejects
-        PRIMARY mode (not yet supported).  Prevents multiple SHADOW models
+        Validates the transition against the allowed state machine.
+        Rejects CHAMPION (reserved for future governance) and PRIMARY
+        (unsupported inference mode).  Prevents multiple SHADOW models
         per realm.
 
         Args:

@@ -68,6 +68,8 @@ ignore = [
 "app/agentblue/ml/training/**" = ["N803", "N806"]
 "app/agentblue/ml/features/transformers.py" = ["N806"]
 "app/agentblue/ml/inference/predictor.py" = ["N803", "N806"]
+"tests/unit/test_ml_*.py" = ["N806", "N803", "E501"]
+"tests/unit/test_ml_synthetic_smoke.py" = ["N806", "N803", "E501", "SIM300"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["agentblue"]
