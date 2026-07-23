@@ -1,7 +1,7 @@
 """QuickBooks entity-specific update payload construction.
 
 Only Purchase is fully supported in Stage 7.
-Other entity types are documented as deferred.
+Bill is deferred until Bill-specific endpoint and schema are implemented.
 """
 
 from __future__ import annotations
@@ -17,16 +17,36 @@ from agentblue.integrations.quickbooks.writeback.exceptions import (
 
 logger = structlog.get_logger(__name__)
 
+# Entity-specific endpoint mapping
+_ENTITY_ENDPOINTS: dict[str, str] = {
+    "Purchase": "purchase",
+    "Bill": "bill",
+}
+
+
+def get_entity_endpoint(
+    transaction_type: str,
+    realm_id: str,
+    entity_id: str = "",
+) -> str:
+    """Get the QuickBooks API endpoint for an entity type."""
+    entity_name = _ENTITY_ENDPOINTS.get(transaction_type)
+    if not entity_name:
+        raise UnsupportedEntityTypeError(f"No endpoint defined for {transaction_type}")
+    base = f"/v3/company/{realm_id}/{entity_name}"
+    if entity_id:
+        return f"{base}/{entity_id}"
+    return base
+
 
 def build_purchase_update(
     current_entity: dict[str, Any],
     selected_account_quickbooks_id: str,
-    line_id: str = "",
     idempotency_key: str = "",
 ) -> dict[str, Any]:
     """Build a sparse Purchase update payload.
 
-    Changes only the account reference on the specified line.
+    Changes only the account reference on expense lines.
     Preserves all other fields and lines.
 
     QuickBooks sparse update: only supplied fields change.
@@ -95,14 +115,6 @@ def build_update_payload(
         )
 
     if transaction_type == "Purchase":
-        return build_purchase_update(
-            current_entity,
-            selected_account_quickbooks_id,
-            idempotency_key=idempotency_key,
-        )
-
-    if transaction_type == "Bill":
-        # Bill uses same line structure as Purchase for expense lines
         return build_purchase_update(
             current_entity,
             selected_account_quickbooks_id,

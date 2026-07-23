@@ -18,7 +18,10 @@ from agentblue.categorization.engine import check_assisted_automation_gate
 from agentblue.categorization.normalization import normalize_text, normalize_vendor
 from agentblue.categorization.rules import evaluate_rule
 from agentblue.categorization.scoring import calculate_score, score_to_band
-from agentblue.integrations.quickbooks.writeback.payloads import build_update_payload
+from agentblue.integrations.quickbooks.writeback.payloads import (
+    build_update_payload,
+    get_entity_endpoint,
+)
 from agentblue.integrations.quickbooks.writeback.validation import (
     check_stale,
     compute_entity_hash,
@@ -326,21 +329,14 @@ class TestWriteBackPayload:
         with pytest.raises(UnsupportedEntityTypeError):
             build_update_payload("JournalEntry", {}, "999")
 
-    def test_bill_update_uses_purchase_semantics(self) -> None:
-        entity = {
-            "Id": "456",
-            "SyncToken": "2",
-            "Line": [
-                {
-                    "Id": "1",
-                    "DetailType": "AccountBasedExpenseLineDetail",
-                    "Amount": "50.00",
-                    "AccountBasedExpenseLineDetail": {"AccountRef": {"value": "30"}},
-                }
-            ],
-        }
-        payload = build_update_payload("Bill", entity, "888")
-        assert payload["Line"][0]["AccountBasedExpenseLineDetail"]["AccountRef"]["value"] == "888"
+    def test_bill_writeback_not_supported(self) -> None:
+        """Bill uses separate /bill endpoint - deferred from Stage 7."""
+        from agentblue.integrations.quickbooks.writeback.exceptions import (
+            UnsupportedEntityTypeError,
+        )
+
+        with pytest.raises(UnsupportedEntityTypeError):
+            build_update_payload("Bill", {}, "888")
 
 
 # ---------------------------------------------------------------------------
@@ -409,6 +405,24 @@ class TestStaleDetection:
 # ---------------------------------------------------------------------------
 # Security
 # ---------------------------------------------------------------------------
+
+
+class TestEntityEndpoints:
+    def test_purchase_endpoint(self) -> None:
+        endpoint = get_entity_endpoint("Purchase", "realm-1", "123")
+        assert "/purchase/123" in endpoint
+
+    def test_purchase_base_endpoint(self) -> None:
+        endpoint = get_entity_endpoint("Purchase", "realm-1")
+        assert "/purchase" in endpoint
+
+    def test_unsupported_endpoint(self) -> None:
+        from agentblue.integrations.quickbooks.writeback.exceptions import (
+            UnsupportedEntityTypeError,
+        )
+
+        with pytest.raises(UnsupportedEntityTypeError):
+            get_entity_endpoint("JournalEntry", "realm-1")
 
 
 class TestSecurity:

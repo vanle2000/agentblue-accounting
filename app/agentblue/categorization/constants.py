@@ -31,5 +31,7 @@ MAX_TRANSACTIONS_PER_RUN = 500
 MAX_CANDIDATE_ACCOUNTS = 50
 MAX_REVIEW_PAGE_SIZE = 100
 
-# Supported write-back entity types
-SUPPORTED_WRITEBACK_TYPES = {"Purchase", "Bill"}
+# Supported write-back entity types (verified against Intuit API)
+# Bill uses separate /bill endpoint and schema — deferred until
+# Bill-specific payload builder and endpoint are implemented.
+SUPPORTED_WRITEBACK_TYPES = {"Purchase"}

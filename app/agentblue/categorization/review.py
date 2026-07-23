@@ -210,13 +210,22 @@ class ReviewService:
 
             await self._session.commit()
 
-        # Create training label on successful approval
+        # Create training label with write-back status
+        # Use distinct label_source so failed/stale writes are distinguishable
+        label_source = "APPROVE"
+        if cat.status == "APPLIED":
+            label_source = "APPROVE_VERIFIED"
+        elif cat.status == "APPLY_FAILED":
+            label_source = "APPROVE_APPLY_FAILED"
+        elif cat.status == "STALE":
+            label_source = "APPROVE_STALE"
+
         await self._repo.create_training_label(
             realm_id=realm_id,
             transaction_id=cat.transaction_id,
             transaction_quickbooks_id=cat.transaction_quickbooks_id,
             selected_account_quickbooks_id=acct_qb_id,
-            label_source="APPROVE",
+            label_source=label_source,
             approved_by=reviewer,
             engine_version=ENGINE_VERSION,
             feature_snapshot={},
