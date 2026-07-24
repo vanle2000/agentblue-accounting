@@ -12,6 +12,11 @@ dependencies = [
     "asyncpg>=0.30.0,<0.31.0",
     "alembic>=1.15.0,<1.16.0",
     "structlog>=25.0.0,<26.0.0",
+    "httpx>=0.28.0,<0.29.0",
+    "numpy>=2.0.0,<3.0.0",
+    "scikit-learn>=1.6.0,<2.0.0",
+    "joblib>=1.4.0,<2.0.0",
+    "pandas>=2.2.0,<3.0.0",
 ]
 
 [project.optional-dependencies]
@@ -19,7 +24,6 @@ dev = [
     "pytest>=8.3.0,<9.0.0",
     "pytest-asyncio>=0.26.0,<0.27.0",
     "pytest-cov>=6.0.0,<7.0.0",
-    "httpx>=0.28.0,<0.29.0",
     "ruff>=0.11.0,<0.12.0",
     "mypy>=1.15.0,<1.16.0",
     "pre-commit>=4.0.0,<5.0.0",
@@ -61,6 +65,15 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "migrations/**" = ["E501", "I001"]
+"app/agentblue/ml/training/**" = ["N803", "N806"]
+"app/agentblue/ml/features/transformers.py" = ["N806"]
+"app/agentblue/ml/inference/predictor.py" = ["N803", "N806"]
+"tests/unit/test_ml_*.py" = ["N806", "N803", "E501"]
+"tests/unit/test_ml_synthetic_smoke.py" = ["N806", "N803", "E501", "SIM300"]
+"tests/unit/test_categorization_extended.py" = ["N806", "N803", "E501", "SIM300", "B017", "C901", "I001"]
+"tests/unit/test_sync_writeback_extended.py" = ["N806", "N803", "E501", "SIM300", "B017", "C901", "I001"]
+"tests/unit/test_infrastructure_extended.py" = ["N806", "N803", "E501", "SIM300", "B017", "C901", "I001"]
+"tests/unit/test_artifact_security.py" = ["N806", "N803", "E501", "SIM300", "B017", "C901", "I001", "E402"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["agentblue"]
@@ -86,6 +99,18 @@ plugins = ["pydantic.mypy"]
 [[tool.mypy.overrides]]
 module = ["alembic.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "agentblue.ml.*",
+    "numpy.*",
+    "sklearn.*",
+    "pandas.*",
+    "joblib.*",
+]
+ignore_missing_imports = true
+warn_return_any = false
+disallow_untyped_defs = false
 
 # ---------------------------------------------------------------------------
 # pytest

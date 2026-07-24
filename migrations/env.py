@@ -33,6 +33,16 @@ from agentblue.db.models.quickbooks_sync import (  # noqa: F401
     QuickBooksTransaction,
     QuickBooksTransactionLine,
 )
+from agentblue.ml.models import (  # noqa: F401
+    MlDataset,
+    MlDatasetRow,
+    MlDriftReport,
+    MlModel,
+    MlModelEvent,
+    MlPrediction,
+    MlShadowEvaluation,
+    MlTrainingRun,
+)
 
 # Import all models here so Alembic can detect them.
 target_metadata = Base.metadata
