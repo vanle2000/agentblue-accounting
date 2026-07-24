@@ -73,6 +73,7 @@ ignore = [
 "tests/unit/test_categorization_extended.py" = ["N806", "N803", "E501", "SIM300", "B017", "C901", "I001"]
 "tests/unit/test_sync_writeback_extended.py" = ["N806", "N803", "E501", "SIM300", "B017", "C901", "I001"]
 "tests/unit/test_infrastructure_extended.py" = ["N806", "N803", "E501", "SIM300", "B017", "C901", "I001"]
+"tests/unit/test_artifact_security.py" = ["N806", "N803", "E501", "SIM300", "B017", "C901", "I001", "E402"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["agentblue"]

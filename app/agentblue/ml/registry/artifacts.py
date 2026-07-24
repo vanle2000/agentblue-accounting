@@ -31,11 +31,56 @@ class ArtifactManager:
     def __init__(self, artifact_root: str | None = None) -> None:
         self._root = Path(artifact_root or ML_ARTIFACT_ROOT)
         self._root.mkdir(parents=True, exist_ok=True)
+        self._resolved_root = self._root.resolve(strict=True)
 
     @property
     def artifact_root(self) -> Path:
         """Return the artifact storage root directory."""
         return self._root
+
+    def _validate_path(self, artifact_path: str, *, operation: str) -> Path:
+        """Validate that an artifact path is contained within the artifact root.
+
+        Resolves the path fully (following symlinks) and rejects:
+        - absolute external paths
+        - ".." traversal
+        - symlinks escaping the root
+        - UNC paths
+        - different drive letters (Windows)
+
+        Args:
+            artifact_path: The relative or absolute path to validate.
+            operation: Description of the operation (for error messages).
+
+        Returns:
+            The resolved, validated Path.
+
+        Raises:
+            ArtifactError: If the path escapes the artifact root.
+        """
+        candidate = Path(artifact_path)
+
+        # If the path is relative, join it with the artifact root first
+        # so that resolution happens relative to the root, not cwd.
+        if not candidate.is_absolute():
+            candidate = self._root / candidate
+
+        # Resolve the candidate path (follows symlinks, normalizes).
+        try:
+            resolved = candidate.resolve()
+        except (OSError, ValueError) as exc:
+            raise ArtifactError(
+                f"Cannot {operation} artifact: invalid path '{artifact_path}': {exc}"
+            ) from exc
+
+        # Check containment using pathlib (not string prefix).
+        if not resolved.is_relative_to(self._resolved_root):
+            raise ArtifactError(
+                f"Cannot {operation} artifact: path '{artifact_path}' "
+                f"escapes the artifact root '{self._resolved_root}'"
+            )
+
+        return resolved
 
     def save_artifact(
         self,
@@ -55,8 +100,11 @@ class ArtifactManager:
 
         Returns:
             A tuple of (absolute_uri, sha256_hex_digest).
+
+        Raises:
+            ArtifactError: If the path escapes the artifact root.
         """
-        target = self._root / path
+        target = self._validate_path(path, operation="save")
         target.parent.mkdir(parents=True, exist_ok=True)
 
         payload: dict[str, Any] = {
@@ -80,7 +128,7 @@ class ArtifactManager:
                 path=str(target),
                 sha256=sha256,
             )
-            return str(target.resolve()), sha256
+            return str(target), sha256
         except Exception:
             # Clean up temp file on failure.
             with contextlib.suppress(OSError):
@@ -94,30 +142,38 @@ class ArtifactManager:
     ) -> Any:
         """Load a model artifact, optionally verifying its hash.
 
+        Validates path containment before any file I/O.
+
         Args:
-            uri: Absolute path to the artifact file.
+            uri: Path to the artifact file.
             expected_sha256: If provided, verify the file hash before loading.
 
         Returns:
             The deserialized model object.
 
         Raises:
-            ArtifactError: If the file does not exist or cannot be read.
+            ArtifactError: If the file does not exist, cannot be read,
+                or escapes the artifact root.
             ArtifactHashMismatchError: If the hash verification fails.
         """
-        path = Path(uri)
-        if not path.exists():
+        resolved = self._validate_path(uri, operation="load")
+
+        if not resolved.exists():
             raise ArtifactError(f"Artifact not found: {uri}")
 
-        if expected_sha256 is not None and not self.verify_hash(uri, expected_sha256):
+        uri_str = str(resolved)
+
+        if expected_sha256 is not None and not self._verify_hash_internal(
+            uri_str, expected_sha256
+        ):
             raise ArtifactHashMismatchError(
                 f"Hash mismatch for {uri}: "
                 f"expected={expected_sha256}, "
-                f"computed={self._compute_file_hash(uri)}"
+                f"computed={self._compute_file_hash(uri_str)}"
             )
 
         try:
-            payload = joblib.load(uri)
+            payload = joblib.load(uri_str)
         except Exception as exc:
             raise ArtifactError(f"Failed to load artifact {uri}: {exc}") from exc
 
@@ -129,16 +185,27 @@ class ArtifactManager:
     def verify_hash(self, uri: str, expected_sha256: str) -> bool:
         """Verify that a file's SHA-256 matches the expected digest.
 
+        Validates path containment before any file I/O.
+
         Args:
-            uri: Absolute path to the file.
+            uri: Path to the file.
             expected_sha256: Expected SHA-256 hex digest.
 
         Returns:
             True if the hash matches, False otherwise.
         """
-        path = Path(uri)
-        if not path.exists():
+        try:
+            resolved = self._validate_path(uri, operation="verify")
+        except ArtifactError:
             return False
+
+        if not resolved.exists():
+            return False
+        actual = self._compute_file_hash(str(resolved))
+        return actual == expected_sha256
+
+    def _verify_hash_internal(self, uri: str, expected_sha256: str) -> bool:
+        """Internal hash verification (path already validated)."""
         actual = self._compute_file_hash(uri)
         return actual == expected_sha256
 

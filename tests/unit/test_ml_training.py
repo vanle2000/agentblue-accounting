@@ -608,34 +608,18 @@ class TestArtifactSecurity:
             mgr.load_artifact(str(corrupted_file))
 
     def test_path_traversal_resolves_to_parent(self, tmp_path: Path) -> None:
-        """Paths with ../.. resolve via Path arithmetic.
-
-        Current ArtifactManager uses ``root / path`` which lets ``../..``
-        escape the root.  This test documents that behaviour so that a
-        future security hardening patch has a regression anchor.
-        """
+        """Paths with ../.. are now rejected by the security fix."""
         mgr = ArtifactManager(artifact_root=str(tmp_path))
         model = "traversal_test"
-        uri, sha256 = mgr.save_artifact(model, "models/../../escape.joblib")
-        # The file is created (current behaviour — no guard)
-        assert Path(uri).exists()
-        loaded = mgr.load_artifact(uri, expected_sha256=sha256)
-        assert loaded == model
+        with pytest.raises(ArtifactError, match="escapes the artifact root"):
+            mgr.save_artifact(model, "models/../../escape.joblib")
 
     def test_absolute_path_joined_under_root(self, tmp_path: Path) -> None:
-        """Absolute paths starting with '/' are joined as relative under root.
-
-        On POSIX, ``root / "/models/x"`` keeps the absolute component.
-        On Windows, Path joining behaviour differs.  This test documents
-        the actual outcome so a future guard has a regression anchor.
-        """
+        """Absolute paths starting with '/' are now rejected by the security fix."""
         mgr = ArtifactManager(artifact_root=str(tmp_path))
         model = "absolute_path_test"
-        uri, sha256 = mgr.save_artifact(model, "/models/abs_test.joblib")
-        # File was created successfully (current behaviour)
-        assert Path(uri).exists()
-        loaded = mgr.load_artifact(uri, expected_sha256=sha256)
-        assert loaded == model
+        with pytest.raises(ArtifactError, match="escapes the artifact root"):
+            mgr.save_artifact(model, "/models/abs_test.joblib")
 
     def test_verify_hash_true(self, tmp_path: Path) -> None:
         mgr = ArtifactManager(artifact_root=str(tmp_path))
