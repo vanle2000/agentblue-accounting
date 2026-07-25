@@ -17,6 +17,8 @@ dependencies = [
     "scikit-learn>=1.6.0,<2.0.0",
     "joblib>=1.4.0,<2.0.0",
     "pandas>=2.2.0,<3.0.0",
+    "python-jose[cryptography]>=3.3.0,<4.0.0",
+    "passlib[bcrypt]>=1.7.4,<2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -74,6 +76,8 @@ ignore = [
 "tests/unit/test_sync_writeback_extended.py" = ["N806", "N803", "E501", "SIM300", "B017", "C901", "I001"]
 "tests/unit/test_infrastructure_extended.py" = ["N806", "N803", "E501", "SIM300", "B017", "C901", "I001"]
 "tests/unit/test_artifact_security.py" = ["N806", "N803", "E501", "SIM300", "B017", "C901", "I001", "E402"]
+"tests/unit/test_security_realm_isolation.py" = ["N806", "N803", "E501", "SIM300", "B017", "C901", "I001", "E402"]
+"tests/unit/test_security_*.py" = ["N806", "N803", "E501", "SIM300", "B017", "C901", "I001", "E402"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["agentblue"]
@@ -98,6 +102,10 @@ plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
 module = ["alembic.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["jose.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
