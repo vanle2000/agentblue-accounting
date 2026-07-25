@@ -1363,8 +1363,27 @@ class TestRouterEndpoints:
             yield _make_mock_session()
 
         from agentblue.db.session import get_db
+        from agentblue.security.auth import (
+            get_authenticated_principal,
+        )
+        from agentblue.security.principal import Principal
+        from agentblue.security.roles import Role
 
         app.dependency_overrides[get_db] = override_get_db
+        mock_principal = Principal(
+            principal_id="test-user",
+            principal_type="human",
+            email="test@example.com",
+            display_name="Test User",
+            active=True,
+            roles=frozenset({Role.ADMIN, Role.APPROVER}),
+            realm_ids=frozenset({"dev-realm", "realm-1"}),
+            auth_method="bypass",
+            correlation_id="test-correlation-id",
+        )
+        app.dependency_overrides[
+            get_authenticated_principal
+        ] = lambda: mock_principal
         client = TestClient(app)
         return app, client
 

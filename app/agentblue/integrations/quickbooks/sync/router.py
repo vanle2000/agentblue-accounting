@@ -7,7 +7,7 @@ sync operations. Business logic is delegated to the sync service.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
@@ -28,6 +28,11 @@ from agentblue.integrations.quickbooks.sync.domain import (
     SyncMode,
     SyncRequest,
 )
+from agentblue.security.policy import require_quickbooks_read
+from agentblue.security.realm import require_realm_access
+
+if TYPE_CHECKING:
+    from agentblue.security.principal import Principal
 
 logger = structlog.get_logger(__name__)
 
@@ -91,14 +96,18 @@ class SyncStatusResponse(BaseModel):
     records_updated: int = 0
 
 
-def _parse_entity_types(entity_names: list[str]) -> list[EntityType]:
+def _parse_entity_types(
+    entity_names: list[str],
+) -> list[EntityType]:
     """Parse entity type names, raising on unsupported types."""
     types: list[EntityType] = []
     for name in entity_names:
         try:
             types.append(EntityType(name))
         except ValueError as err:
-            raise QuickBooksUnsupportedEntityError(f"Unsupported entity type: {name!r}") from err
+            raise QuickBooksUnsupportedEntityError(
+                f"Unsupported entity type: {name!r}"
+            ) from err
     return types
 
 
@@ -141,12 +150,18 @@ def _build_sync_response(run_result: Any) -> SyncRunResponse:
 async def trigger_backfill(
     body: BackfillRequest,
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_quickbooks_read)
+    ] = Depends(require_quickbooks_read),
 ) -> SyncRunResponse:
     """Trigger an initial historical backfill."""
+    require_realm_access(principal, body.realm_id)
     settings = get_quickbooks_settings()
     entity_types = _parse_entity_types(body.entity_types)
 
-    from agentblue.integrations.quickbooks.api_client import QuickBooksApiClient
+    from agentblue.integrations.quickbooks.api_client import (
+        QuickBooksApiClient,
+    )
     from agentblue.integrations.quickbooks.sync.service import (
         QuickBooksTransactionSyncService,
     )
@@ -162,27 +177,39 @@ async def trigger_backfill(
     )
 
     try:
-        async with QuickBooksApiClient(settings, repository, body.realm_id) as client:
+        async with QuickBooksApiClient(
+            settings, repository, body.realm_id
+        ) as client:
             service = QuickBooksTransactionSyncService(client, db)
             result = await service.backfill(request)
         return _build_sync_response(result)
     except QuickBooksUnsupportedEntityError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=400, detail=str(exc)
+        ) from exc
     except QuickBooksSyncError as exc:
         logger.error("backfill_endpoint_failed", error=str(exc)[:200])
-        raise HTTPException(status_code=500, detail="Sync operation failed.") from exc
+        raise HTTPException(
+            status_code=500, detail="Sync operation failed."
+        ) from exc
 
 
 @router.post("/incremental", response_model=SyncRunResponse)
 async def trigger_incremental(
     body: IncrementalRequest,
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_quickbooks_read)
+    ] = Depends(require_quickbooks_read),
 ) -> SyncRunResponse:
     """Trigger an incremental CDC sync."""
+    require_realm_access(principal, body.realm_id)
     settings = get_quickbooks_settings()
     entity_types = _parse_entity_types(body.entity_types)
 
-    from agentblue.integrations.quickbooks.api_client import QuickBooksApiClient
+    from agentblue.integrations.quickbooks.api_client import (
+        QuickBooksApiClient,
+    )
     from agentblue.integrations.quickbooks.sync.service import (
         QuickBooksTransactionSyncService,
     )
@@ -195,30 +222,48 @@ async def trigger_incremental(
     )
 
     try:
-        async with QuickBooksApiClient(settings, repository, body.realm_id) as client:
+        async with QuickBooksApiClient(
+            settings, repository, body.realm_id
+        ) as client:
             service = QuickBooksTransactionSyncService(client, db)
             result = await service.sync_incremental(request)
         return _build_sync_response(result)
     except QuickBooksUnsupportedEntityError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=400, detail=str(exc)
+        ) from exc
     except QuickBooksSyncError as exc:
-        logger.error("incremental_endpoint_failed", error=str(exc)[:200])
-        raise HTTPException(status_code=500, detail="Sync operation failed.") from exc
+        logger.error(
+            "incremental_endpoint_failed", error=str(exc)[:200]
+        )
+        raise HTTPException(
+            status_code=500, detail="Sync operation failed."
+        ) from exc
 
 
-@router.get("/runs/{sync_run_id}", response_model=SyncStatusResponse)
+@router.get(
+    "/runs/{sync_run_id}",
+    response_model=SyncStatusResponse,
+)
 async def get_sync_run_status(
     sync_run_id: str,
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_quickbooks_read)
+    ] = Depends(require_quickbooks_read),
 ) -> SyncStatusResponse:
     """Get the status of a specific sync run."""
-    from agentblue.integrations.quickbooks.sync.repository import SyncRepository
+    from agentblue.integrations.quickbooks.sync.repository import (
+        SyncRepository,
+    )
 
     repo = SyncRepository(db)
     run = await repo.get_sync_run(sync_run_id)
 
     if run is None:
-        raise HTTPException(status_code=404, detail="Sync run not found.")
+        raise HTTPException(
+            status_code=404, detail="Sync run not found."
+        )
 
     return SyncStatusResponse(
         sync_run_id=run.id,

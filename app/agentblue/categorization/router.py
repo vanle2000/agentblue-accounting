@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Annotated
+
 import structlog
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +33,15 @@ from agentblue.categorization.schemas import (
 )
 from agentblue.categorization.services import CategorizationService
 from agentblue.db.session import get_db
+from agentblue.security.policy import (
+    require_accounting_approve,
+    require_accounting_read,
+    require_accounting_review,
+)
+from agentblue.security.realm import require_realm_access
+
+if TYPE_CHECKING:
+    from agentblue.security.principal import Principal
 
 logger = structlog.get_logger(__name__)
 
@@ -47,7 +58,11 @@ router = APIRouter(
 async def create_run(
     body: CategorizationRunRequest,
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_accounting_review)
+    ] = Depends(require_accounting_review),
 ) -> CategorizationRunResponse:
+    require_realm_access(principal, body.realm_id)
     service = CategorizationService(db)
     result = await service.run_categorization(
         body.realm_id,
@@ -62,6 +77,9 @@ async def get_run(
     realm_id: str = Query(),
     run_id: str = "",
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_accounting_read)
+    ] = Depends(require_accounting_read),
 ) -> dict[str, object]:
     repo = CategorizationRepository(db)
     run = await repo.get_run(realm_id, run_id)
@@ -88,7 +106,11 @@ async def list_categorizations(
     status: str = Query(default=""),
     limit: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_accounting_read)
+    ] = Depends(require_accounting_read),
 ) -> list[CategorizationSummary]:
+    require_realm_access(principal, realm_id)
     repo = CategorizationRepository(db)
     queue = await repo.get_review_queue(realm_id, limit=limit)
     return [
@@ -112,6 +134,9 @@ async def get_categorization(
     realm_id: str = Query(),
     cat_id: str = "",
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_accounting_read)
+    ] = Depends(require_accounting_read),
 ) -> CategorizationDetail:
     repo = CategorizationRepository(db)
     cat = await repo.get_categorization(realm_id, cat_id)
@@ -146,7 +171,11 @@ async def approve_and_apply(
     cat_id: str = "",
     body: ApproveAndApplyRequest = Body(...),
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_accounting_approve)
+    ] = Depends(require_accounting_approve),
 ) -> ReviewResponse:
+    require_realm_access(principal, realm_id)
     service = ReviewService(db)
     try:
         result = await service.approve_and_apply(
@@ -182,6 +211,9 @@ async def reject_categorization(
     cat_id: str = "",
     body: ReviewRequest = Body(...),
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_accounting_review)
+    ] = Depends(require_accounting_review),
 ) -> ReviewResponse:
     service = ReviewService(db)
     try:
@@ -205,6 +237,9 @@ async def defer_categorization(
     cat_id: str = "",
     body: ReviewRequest = Body(...),
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_accounting_review)
+    ] = Depends(require_accounting_review),
 ) -> ReviewResponse:
     service = ReviewService(db)
     try:
@@ -227,7 +262,11 @@ async def defer_categorization(
 async def create_rule(
     body: RuleCreateRequest,
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_accounting_review)
+    ] = Depends(require_accounting_review),
 ) -> RuleResponse:
+    require_realm_access(principal, body.realm_id)
     repo = CategorizationRepository(db)
     rule = CategorizationRule(
         realm_id=body.realm_id,
@@ -253,7 +292,11 @@ async def create_rule(
 async def list_rules(
     realm_id: str = Query(),
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_accounting_read)
+    ] = Depends(require_accounting_read),
 ) -> list[RuleResponse]:
+    require_realm_access(principal, realm_id)
     repo = CategorizationRepository(db)
     rules = await repo.get_active_rules(realm_id)
     return [
@@ -278,7 +321,11 @@ async def review_queue(
     realm_id: str = Query(),
     limit: int = Query(default=50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_accounting_read)
+    ] = Depends(require_accounting_read),
 ) -> ReviewQueueResponse:
+    require_realm_access(principal, realm_id)
     repo = CategorizationRepository(db)
     items = await repo.get_review_queue(realm_id, limit=limit)
     return ReviewQueueResponse(
@@ -288,7 +335,9 @@ async def review_queue(
                 transaction_quickbooks_id=c.transaction_quickbooks_id,
                 transaction_type=c.transaction_type or "",
                 status=c.status,
-                recommended_account_quickbooks_id=(c.recommended_account_quickbooks_id or ""),
+                recommended_account_quickbooks_id=(
+                    c.recommended_account_quickbooks_id or ""
+                ),
                 confidence_score=str(c.confidence_score),
                 confidence_band=c.confidence_band,
                 recommendation_source=c.recommendation_source,
@@ -305,7 +354,11 @@ async def review_queue(
 
 
 @router.get("/supported-writeback-types", response_model=SupportedWriteBackResponse)
-async def supported_writeback_types() -> SupportedWriteBackResponse:
+async def supported_writeback_types(
+    principal: Annotated[
+        Principal, Depends(require_accounting_read)
+    ] = Depends(require_accounting_read),
+) -> SupportedWriteBackResponse:
     all_types = {
         "Purchase",
         "Bill",

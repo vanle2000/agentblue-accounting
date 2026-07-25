@@ -6,8 +6,10 @@ and API health check. Business logic is delegated to the service layer.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Annotated
+
 import structlog
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 
 from agentblue.integrations.quickbooks.api_client import QuickBooksApiClient
@@ -27,6 +29,10 @@ from agentblue.integrations.quickbooks.oauth import build_authorization_url
 from agentblue.integrations.quickbooks.repository import (
     InMemoryTokenRepository,
 )
+from agentblue.security.policy import require_quickbooks_read
+
+if TYPE_CHECKING:
+    from agentblue.security.principal import Principal
 
 router = APIRouter(
     prefix="/api/v1/integrations/quickbooks",
@@ -62,7 +68,11 @@ class HealthResponse(BaseModel):
 
 
 @router.get("/authorize", response_model=AuthorizeResponse)
-async def authorize() -> AuthorizeResponse:
+async def authorize(
+    principal: Annotated[
+        Principal, Depends(require_quickbooks_read)
+    ] = Depends(require_quickbooks_read),
+) -> AuthorizeResponse:
     """Generate a QuickBooks OAuth authorization URL."""
     settings = get_quickbooks_settings()
     result = build_authorization_url(settings)
@@ -80,6 +90,9 @@ async def callback(
     realm_id: str = Query(default="", alias="realmId"),
     error: str = Query(default=""),
     error_description: str = Query(default=""),
+    principal: Annotated[
+        Principal, Depends(require_quickbooks_read)
+    ] = Depends(require_quickbooks_read),
 ) -> CallbackResponse:
     """Handle the OAuth callback from Intuit."""
     query_params = {
@@ -105,7 +118,9 @@ async def callback(
         raise
 
     try:
-        token = await exchange_code_for_token(settings, callback_params.code)
+        token = await exchange_code_for_token(
+            settings, callback_params.code
+        )
     except QuickBooksTokenExchangeError:
         logger.error("quickbooks_token_exchange_failed")
         raise
@@ -130,6 +145,9 @@ async def callback(
 @router.get("/health", response_model=HealthResponse)
 async def quickbooks_health(
     realm_id: str = Query(default=""),
+    principal: Annotated[
+        Principal, Depends(require_quickbooks_read)
+    ] = Depends(require_quickbooks_read),
 ) -> HealthResponse:
     """Check QuickBooks API health.
 
@@ -149,8 +167,12 @@ async def quickbooks_health(
         )
 
     repository = InMemoryTokenRepository()
-    async with QuickBooksApiClient(settings, repository, realm_id) as client:
-        result = await check_quickbooks_health(client, environment=settings.environment.value)
+    async with QuickBooksApiClient(
+        settings, repository, realm_id
+    ) as client:
+        result = await check_quickbooks_health(
+            client, environment=settings.environment.value
+        )
 
     return HealthResponse(
         healthy=result.healthy,

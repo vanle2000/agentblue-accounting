@@ -1126,6 +1126,31 @@ class TestLoadRegisteredModel:
 class TestMLRouterAdditional:
     """Additional ML router endpoint tests with mocked DB."""
 
+    @staticmethod
+    def _mock_principal() -> MagicMock:
+        """Return a mock Principal for auth overrides."""
+        from agentblue.security.principal import Principal
+        from agentblue.security.roles import Role
+
+        return Principal(
+            principal_id="test-user",
+            principal_type="human",
+            email="test@example.com",
+            display_name="Test User",
+            active=True,
+            roles=frozenset({Role.ADMIN}),
+            realm_ids=frozenset({"dev-realm"}),
+            auth_method="bypass",
+            correlation_id="test-correlation-id",
+        )
+
+    def _override_auth(self, app: Any) -> None:
+        """Override get_authenticated_principal on the app."""
+        from agentblue.security.auth import get_authenticated_principal
+
+        mock_principal = self._mock_principal()
+        app.dependency_overrides[get_authenticated_principal] = lambda: mock_principal
+
     async def test_get_dataset_not_found(self) -> None:
         """GET /datasets/{id} returns 404 for nonexistent."""
         from fastapi import FastAPI
@@ -1135,6 +1160,7 @@ class TestMLRouterAdditional:
 
         app = FastAPI()
         app.include_router(router)
+        self._override_auth(app)
 
         # Override get_db dependency
         session = _mock_session_empty()
@@ -1160,6 +1186,7 @@ class TestMLRouterAdditional:
 
         app = FastAPI()
         app.include_router(router)
+        self._override_auth(app)
 
         session = _mock_session_empty()
         from agentblue.db.session import get_db
@@ -1184,6 +1211,7 @@ class TestMLRouterAdditional:
 
         app = FastAPI()
         app.include_router(router)
+        self._override_auth(app)
 
         session = _mock_session_empty()
         from agentblue.db.session import get_db
@@ -1212,6 +1240,7 @@ class TestMLRouterAdditional:
 
         app = FastAPI()
         app.include_router(router)
+        self._override_auth(app)
 
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
@@ -1235,6 +1264,7 @@ class TestMLRouterAdditional:
 
         app = FastAPI()
         app.include_router(router)
+        self._override_auth(app)
 
         with patch("agentblue.ml.router._registry") as mock_registry:
             mock_registry.get_model = AsyncMock(return_value=None)
@@ -1254,6 +1284,7 @@ class TestMLRouterAdditional:
 
         app = FastAPI()
         app.include_router(router)
+        self._override_auth(app)
 
         session = _mock_session_empty()
         from agentblue.db.session import get_db

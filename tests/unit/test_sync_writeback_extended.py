@@ -2111,6 +2111,27 @@ class TestQuickBooksHealthNoRealm:
         # Note: the function signature uses Depends, so we test via TestClient
         app = FastAPI()
 
+        from agentblue.security.auth import (
+            get_authenticated_principal,
+        )
+        from agentblue.security.principal import Principal
+        from agentblue.security.roles import Role
+
+        mock_principal = Principal(
+            principal_id="test-user",
+            principal_type="human",
+            email="test@example.com",
+            display_name="Test User",
+            active=True,
+            roles=frozenset({Role.ADMIN}),
+            realm_ids=frozenset({"dev-realm"}),
+            auth_method="bypass",
+            correlation_id="test-correlation-id",
+        )
+        app.dependency_overrides[
+            get_authenticated_principal
+        ] = lambda: mock_principal
+
         # Override get_quickbooks_settings
         with patch(
             "agentblue.integrations.quickbooks.router.get_quickbooks_settings"
@@ -2118,11 +2139,15 @@ class TestQuickBooksHealthNoRealm:
             mock_settings.return_value = MagicMock()
             mock_settings.return_value.environment.value = "sandbox"
 
-            from agentblue.integrations.quickbooks.router import router as qb_router
+            from agentblue.integrations.quickbooks.router import (
+                router as qb_router,
+            )
 
             app.include_router(qb_router)
             client = TestClient(app)
-            response = client.get("/api/v1/integrations/quickbooks/health")
+            response = client.get(
+                "/api/v1/integrations/quickbooks/health"
+            )
             assert response.status_code == 200
             data = response.json()
             assert data["healthy"] is False
