@@ -25,6 +25,7 @@ from agentblue.integrations.quickbooks.sync.router import (
 )
 from agentblue.logging import configure_logging
 from agentblue.ml.router import router as ml_router
+from agentblue.security.middleware import CorrelationIDMiddleware
 
 
 @asynccontextmanager
@@ -62,12 +63,20 @@ def create_app() -> FastAPI:
         redoc_url=None,
         lifespan=lifespan,
     )
+
+    # Middleware (order matters — outermost first)
+    app.add_middleware(CorrelationIDMiddleware)
+
+    # Public endpoints
     app.include_router(health_router)
+
+    # Protected endpoints (authentication required)
     app.include_router(quickbooks_router)
     app.include_router(quickbooks_sync_router)
     app.include_router(quickbooks_accounting_router)
     app.include_router(categorization_router)
     app.include_router(ml_router)
+
     return app
 
 

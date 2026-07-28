@@ -8,7 +8,7 @@ No QuickBooks write endpoints.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -48,6 +48,15 @@ from agentblue.ml.schemas import (
     ShadowEvaluationResponse,
     TrainingRunResponse,
 )
+from agentblue.security.policy import (
+    require_ml_read,
+    require_ml_shadow_activate,
+    require_ml_train,
+)
+from agentblue.security.realm import require_realm_access
+
+if TYPE_CHECKING:
+    from agentblue.security.principal import Principal
 
 logger = structlog.get_logger(__name__)
 
@@ -67,8 +76,12 @@ async def list_datasets(
     realm_id: str = Query(default=""),
     limit: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_ml_read)
+    ] = Depends(require_ml_read),
 ) -> list[DatasetResponse]:
     """List ML datasets, optionally filtered by realm."""
+    require_realm_access(principal, realm_id)
     stmt = select(MlDataset)
     if realm_id:
         stmt = stmt.where(MlDataset.realm_id == realm_id)
@@ -101,9 +114,14 @@ async def list_datasets(
 async def get_dataset(
     dataset_id: str,
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_ml_read)
+    ] = Depends(require_ml_read),
 ) -> DatasetResponse:
     """Get a single dataset by ID."""
-    result = await db.execute(select(MlDataset).where(MlDataset.id == dataset_id))
+    result = await db.execute(
+        select(MlDataset).where(MlDataset.id == dataset_id)
+    )
     d = result.scalar_one_or_none()
     if d is None:
         raise HTTPException(404, "Dataset not found.")
@@ -126,13 +144,21 @@ async def get_dataset(
     )
 
 
-@router.get("/datasets/{dataset_id}/quality-report", response_model=DatasetQualityReport)
+@router.get(
+    "/datasets/{dataset_id}/quality-report",
+    response_model=DatasetQualityReport,
+)
 async def get_dataset_quality_report(
     dataset_id: str,
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_ml_read)
+    ] = Depends(require_ml_read),
 ) -> DatasetQualityReport:
     """Get the quality report for a dataset."""
-    result = await db.execute(select(MlDataset).where(MlDataset.id == dataset_id))
+    result = await db.execute(
+        select(MlDataset).where(MlDataset.id == dataset_id)
+    )
     d = result.scalar_one_or_none()
     if d is None:
         raise HTTPException(404, "Dataset not found.")
@@ -156,8 +182,12 @@ async def list_training_runs(
     realm_id: str = Query(default=""),
     limit: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_ml_read)
+    ] = Depends(require_ml_read),
 ) -> list[TrainingRunResponse]:
     """List training runs, optionally filtered by realm."""
+    require_realm_access(principal, realm_id)
     stmt = select(MlTrainingRun)
     if realm_id:
         stmt = stmt.where(MlTrainingRun.realm_id == realm_id)
@@ -195,9 +225,14 @@ async def list_training_runs(
 async def get_training_run(
     run_id: str,
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_ml_read)
+    ] = Depends(require_ml_read),
 ) -> TrainingRunResponse:
     """Get a single training run by ID."""
-    result = await db.execute(select(MlTrainingRun).where(MlTrainingRun.id == run_id))
+    result = await db.execute(
+        select(MlTrainingRun).where(MlTrainingRun.id == run_id)
+    )
     t = result.scalar_one_or_none()
     if t is None:
         raise HTTPException(404, "Training run not found.")
@@ -234,8 +269,12 @@ async def list_models(
     status: str = Query(default=""),
     limit: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_ml_read)
+    ] = Depends(require_ml_read),
 ) -> list[ModelResponse]:
     """List ML models with optional filters."""
+    require_realm_access(principal, realm_id)
     models = await _registry.list_models(
         db, realm_id=realm_id or None, status=status or None, limit=limit
     )
@@ -268,6 +307,9 @@ async def list_models(
 async def get_model(
     model_id: str,
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_ml_read)
+    ] = Depends(require_ml_read),
 ) -> ModelResponse:
     """Get a single model by ID."""
     model = await _registry.get_model(db, model_id)
@@ -299,6 +341,9 @@ async def get_model(
 async def validate_model(
     model_id: str,
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_ml_train)
+    ] = Depends(require_ml_train),
 ) -> dict[str, Any]:
     """Transition a model from CANDIDATE to VALIDATED."""
     model = await _registry.transition_status(
@@ -311,6 +356,9 @@ async def validate_model(
 async def activate_shadow(
     model_id: str,
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_ml_shadow_activate)
+    ] = Depends(require_ml_shadow_activate),
 ) -> dict[str, Any]:
     """Transition a model from VALIDATED to SHADOW."""
     model = await _registry.transition_status(
@@ -324,9 +372,14 @@ async def retire_model(
     model_id: str,
     reason: str = Query(default="Retired via API"),
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_ml_train)
+    ] = Depends(require_ml_train),
 ) -> dict[str, Any]:
     """Transition a model to RETIRED."""
-    model = await _registry.transition_status(db, model_id, "RETIRED", actor="api", reason=reason)
+    model = await _registry.transition_status(
+        db, model_id, "RETIRED", actor="api", reason=reason
+    )
     return {"model_id": model.id, "status": model.status}
 
 
@@ -334,6 +387,9 @@ async def retire_model(
 async def get_model_metrics(
     model_id: str,
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_ml_read)
+    ] = Depends(require_ml_read),
 ) -> ModelMetricsResponse:
     """Get evaluation metrics for a model."""
     model = await _registry.get_model(db, model_id)
@@ -366,8 +422,12 @@ async def list_predictions(
     model_id: str = Query(default=""),
     limit: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_ml_read)
+    ] = Depends(require_ml_read),
 ) -> list[PredictionResponse]:
     """List ML predictions with optional filters."""
+    require_realm_access(principal, realm_id)
     stmt = select(MlPrediction)
     if realm_id:
         stmt = stmt.where(MlPrediction.realm_id == realm_id)
@@ -383,12 +443,18 @@ async def list_predictions(
             categorization_id=p.categorization_id,
             source_transaction_hash=p.source_transaction_hash,
             model_id=p.model_id,
-            predicted_account_quickbooks_id=p.predicted_account_quickbooks_id,
+            predicted_account_quickbooks_id=(
+                p.predicted_account_quickbooks_id
+            ),
             raw_probability=p.raw_probability,
             calibrated_probability=p.calibrated_probability,
             rank=p.rank,
             prediction_fingerprint=p.prediction_fingerprint,
-            top_predictions=p.top_predictions if isinstance(p.top_predictions, list) else [],
+            top_predictions=(
+                p.top_predictions
+                if isinstance(p.top_predictions, list)
+                else []
+            ),
             inference_mode=p.inference_mode,
             latency_ms=p.latency_ms,
             created_at=p.created_at,
@@ -400,20 +466,29 @@ async def list_predictions(
 # ---- Shadow Evaluations ----
 
 
-@router.get("/shadow-evaluations", response_model=list[ShadowEvaluationResponse])
+@router.get(
+    "/shadow-evaluations",
+    response_model=list[ShadowEvaluationResponse],
+)
 async def list_shadow_evaluations(
     realm_id: str = Query(default=""),
     model_id: str = Query(default=""),
     limit: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_ml_read)
+    ] = Depends(require_ml_read),
 ) -> list[ShadowEvaluationResponse]:
     """List shadow evaluations with optional filters."""
+    require_realm_access(principal, realm_id)
     stmt = select(MlShadowEvaluation)
     if realm_id:
         stmt = stmt.where(MlShadowEvaluation.realm_id == realm_id)
     if model_id:
         stmt = stmt.where(MlShadowEvaluation.model_id == model_id)
-    stmt = stmt.order_by(MlShadowEvaluation.created_at.desc()).limit(limit)
+    stmt = stmt.order_by(
+        MlShadowEvaluation.created_at.desc()
+    ).limit(limit)
     result = await db.execute(stmt)
     rows = result.scalars().all()
     return [
@@ -423,7 +498,9 @@ async def list_shadow_evaluations(
             model_id=e.model_id,
             ml_account_id=e.ml_account_quickbooks_id,
             rule_account_id=e.rule_account_quickbooks_id,
-            deterministic_account_quickbooks_id=e.deterministic_account_quickbooks_id,
+            deterministic_account_quickbooks_id=(
+                e.deterministic_account_quickbooks_id
+            ),
             outcome=e.outcome,
             ml_was_correct=e.ml_was_correct,
             deterministic_was_correct=e.deterministic_was_correct,
@@ -442,8 +519,12 @@ async def get_monitoring_summary(
     realm_id: str = Query(default=""),
     model_id: str = Query(default=""),
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_ml_read)
+    ] = Depends(require_ml_read),
 ) -> dict[str, Any]:
     """Get aggregated monitoring summary for shadow evaluations."""
+    require_realm_access(principal, realm_id)
     stmt = select(MlShadowEvaluation)
     if realm_id:
         stmt = stmt.where(MlShadowEvaluation.realm_id == realm_id)
@@ -466,8 +547,12 @@ async def get_monitoring_summary(
         "total_evaluations": len(evaluations),
         "agreement_rate": compute_shadow_agreement_rate(evaluations),
         "override_rate": compute_override_rate(evaluations),
-        "resolved_count": sum(1 for e in evaluations if e["resolved"]),
-        "unresolved_count": sum(1 for e in evaluations if not e["resolved"]),
+        "resolved_count": sum(
+            1 for e in evaluations if e["resolved"]
+        ),
+        "unresolved_count": sum(
+            1 for e in evaluations if not e["resolved"]
+        ),
     }
 
 
@@ -478,6 +563,9 @@ async def get_monitoring_summary(
 async def create_drift_report(
     body: DriftReportRequest,
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_ml_train)
+    ] = Depends(require_ml_train),
 ) -> DriftReportResponse:
     """Generate and store a drift report for a model."""
     # Verify model exists.
@@ -495,7 +583,9 @@ async def create_drift_report(
         label_drift={},
         prediction_drift={},
         class_distribution={},
-        warnings=["Drift computation requires feature extraction pipeline."],
+        warnings=[
+            "Drift computation requires feature extraction pipeline."
+        ],
         warning_count=1,
         status="PENDING",
     )
@@ -521,7 +611,11 @@ async def create_drift_report(
 
 
 @router.get("/config", response_model=MLConfigResponse)
-async def get_ml_config() -> MLConfigResponse:
+async def get_ml_config(
+    principal: Annotated[
+        Principal, Depends(require_ml_read)
+    ] = Depends(require_ml_read),
+) -> MLConfigResponse:
     """Get current ML configuration snapshot."""
     return MLConfigResponse(
         enabled=ML_ENABLED,

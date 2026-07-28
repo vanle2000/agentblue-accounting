@@ -5,7 +5,7 @@ Transport-layer only. Business logic in services.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,8 +16,12 @@ from agentblue.db.session import get_db
 from agentblue.integrations.quickbooks.accounting.domain import (
     CandidateFilter,
 )
-from agentblue.integrations.quickbooks.accounting.repository import AccountingRepository
-from agentblue.integrations.quickbooks.accounting.service import AccountSyncService
+from agentblue.integrations.quickbooks.accounting.repository import (
+    AccountingRepository,
+)
+from agentblue.integrations.quickbooks.accounting.service import (
+    AccountSyncService,
+)
 from agentblue.integrations.quickbooks.accounting.services import (
     AccountCandidateService,
     AccountHierarchyService,
@@ -25,8 +29,17 @@ from agentblue.integrations.quickbooks.accounting.services import (
     AccountValidationService,
     TransactionAccountResolver,
 )
-from agentblue.integrations.quickbooks.config import get_quickbooks_settings
-from agentblue.integrations.quickbooks.repository import InMemoryTokenRepository
+from agentblue.integrations.quickbooks.config import (
+    get_quickbooks_settings,
+)
+from agentblue.integrations.quickbooks.repository import (
+    InMemoryTokenRepository,
+)
+from agentblue.security.policy import require_quickbooks_read
+from agentblue.security.realm import require_realm_access
+
+if TYPE_CHECKING:
+    from agentblue.security.principal import Principal
 
 logger = structlog.get_logger(__name__)
 
@@ -157,7 +170,9 @@ def _hierarchy_to_response(node: Any) -> HierarchyNodeResponse:
         classification=node.classification,
         active=node.active,
         depth=node.depth,
-        children=[_hierarchy_to_response(c) for c in node.children],
+        children=[
+            _hierarchy_to_response(c) for c in node.children
+        ],
     )
 
 
@@ -168,14 +183,22 @@ def _hierarchy_to_response(node: Any) -> HierarchyNodeResponse:
 async def sync_backfill(
     realm_id: str = Query(),
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_quickbooks_read)
+    ] = Depends(require_quickbooks_read),
 ) -> SyncResponse:
     """Backfill all accounts (active and inactive)."""
+    require_realm_access(principal, realm_id)
     settings = get_quickbooks_settings()
     repository = InMemoryTokenRepository()
 
-    from agentblue.integrations.quickbooks.api_client import QuickBooksApiClient
+    from agentblue.integrations.quickbooks.api_client import (
+        QuickBooksApiClient,
+    )
 
-    async with QuickBooksApiClient(settings, repository, realm_id) as client:
+    async with QuickBooksApiClient(
+        settings, repository, realm_id
+    ) as client:
         service = AccountSyncService(client, db)
         counts = await service.backfill(realm_id)
 
@@ -186,14 +209,22 @@ async def sync_backfill(
 async def sync_incremental(
     realm_id: str = Query(),
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_quickbooks_read)
+    ] = Depends(require_quickbooks_read),
 ) -> SyncResponse:
     """Incremental CDC sync for accounts."""
+    require_realm_access(principal, realm_id)
     settings = get_quickbooks_settings()
     repository = InMemoryTokenRepository()
 
-    from agentblue.integrations.quickbooks.api_client import QuickBooksApiClient
+    from agentblue.integrations.quickbooks.api_client import (
+        QuickBooksApiClient,
+    )
 
-    async with QuickBooksApiClient(settings, repository, realm_id) as client:
+    async with QuickBooksApiClient(
+        settings, repository, realm_id
+    ) as client:
         service = AccountSyncService(client, db)
         counts = await service.sync_incremental(realm_id)
 
@@ -210,8 +241,12 @@ async def list_accounts(
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_quickbooks_read)
+    ] = Depends(require_quickbooks_read),
 ) -> PaginatedAccounts:
     """List accounts with optional filters."""
+    require_realm_access(principal, realm_id)
     repo = AccountingRepository(db)
     accounts = await repo.get_accounts_by_realm(
         realm_id,
@@ -231,17 +266,28 @@ async def list_accounts(
     )
 
 
-@router.get("/{quickbooks_account_id}", response_model=AccountSummary)
+@router.get(
+    "/{quickbooks_account_id}",
+    response_model=AccountSummary,
+)
 async def get_account(
     realm_id: str = Query(),
     quickbooks_account_id: str = "",
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_quickbooks_read)
+    ] = Depends(require_quickbooks_read),
 ) -> AccountSummary:
     """Get a single account by QuickBooks ID."""
+    require_realm_access(principal, realm_id)
     repo = AccountingRepository(db)
-    account = await repo.get_account_by_quickbooks_id(realm_id, quickbooks_account_id)
+    account = await repo.get_account_by_quickbooks_id(
+        realm_id, quickbooks_account_id
+    )
     if account is None:
-        raise HTTPException(status_code=404, detail="Account not found.")
+        raise HTTPException(
+            status_code=404, detail="Account not found."
+        )
     return _to_summary(account)
 
 
@@ -253,12 +299,20 @@ async def get_hierarchy(
     realm_id: str = Query(),
     quickbooks_account_id: str = "",
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_quickbooks_read)
+    ] = Depends(require_quickbooks_read),
 ) -> HierarchyNodeResponse:
     """Get account hierarchy rooted at the given account."""
+    require_realm_access(principal, realm_id)
     service = AccountHierarchyService(db)
-    node = await service.get_hierarchy(realm_id, quickbooks_account_id)
+    node = await service.get_hierarchy(
+        realm_id, quickbooks_account_id
+    )
     if node is None:
-        raise HTTPException(status_code=404, detail="Account not found.")
+        raise HTTPException(
+            status_code=404, detail="Account not found."
+        )
     return _hierarchy_to_response(node)
 
 
@@ -266,15 +320,23 @@ async def get_hierarchy(
 async def validate_account(
     body: ValidateRequest,
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_quickbooks_read)
+    ] = Depends(require_quickbooks_read),
 ) -> ValidationResultResponse:
     """Validate an account reference."""
+    require_realm_access(principal, body.realm_id)
     service = AccountValidationService(db)
     result = await service.validate_account_reference(
         body.realm_id,
         body.quickbooks_account_id,
         require_active=body.require_active,
-        allowed_account_types=body.allowed_account_types or None,
-        allowed_classifications=body.allowed_classifications or None,
+        allowed_account_types=(
+            body.allowed_account_types or None
+        ),
+        allowed_classifications=(
+            body.allowed_classifications or None
+        ),
     )
     return ValidationResultResponse(
         valid=result.valid,
@@ -287,7 +349,10 @@ async def validate_account(
     )
 
 
-@router.get("/candidates", response_model=list[CandidateResponse])
+@router.get(
+    "/candidates",
+    response_model=list[CandidateResponse],
+)
 async def get_candidates(
     realm_id: str = Query(),
     active_only: bool = Query(default=True),
@@ -297,8 +362,12 @@ async def get_candidates(
     include_subaccounts: bool = Query(default=True),
     max_results: int = Query(default=100, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_quickbooks_read)
+    ] = Depends(require_quickbooks_read),
 ) -> list[CandidateResponse]:
     """Get account candidates for future categorization."""
+    require_realm_access(principal, realm_id)
     service = AccountCandidateService(db)
     filters = CandidateFilter(
         realm_id=realm_id,
@@ -314,7 +383,9 @@ async def get_candidates(
         CandidateResponse(
             quickbooks_id=str(c["quickbooks_id"]),
             name=str(c["name"]),
-            fully_qualified_name=str(c.get("fully_qualified_name", "")),
+            fully_qualified_name=str(
+                c.get("fully_qualified_name", "")
+            ),
             classification=str(c.get("classification", "")),
             account_type=str(c.get("account_type", "")),
             active=bool(c.get("active", True)),
@@ -328,10 +399,18 @@ async def get_candidates(
 async def resolve_account_ref(
     body: UsageRequest,
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_quickbooks_read)
+    ] = Depends(require_quickbooks_read),
 ) -> AccountRefResponse:
     """Resolve a transaction account reference."""
+    require_realm_access(principal, body.realm_id)
     service = TransactionAccountResolver(db)
-    result = await service.resolve(body.realm_id, body.quickbooks_account_id, "HEADER_ACCOUNT")
+    result = await service.resolve(
+        body.realm_id,
+        body.quickbooks_account_id,
+        "HEADER_ACCOUNT",
+    )
     return AccountRefResponse(
         quickbooks_account_id=result.quickbooks_account_id,
         account_id=result.account_id,
@@ -345,16 +424,27 @@ async def resolve_account_ref(
     )
 
 
-@router.post("/evaluate-usage", response_model=UsageEvalResponse)
+@router.post(
+    "/evaluate-usage",
+    response_model=UsageEvalResponse,
+)
 async def evaluate_usage(
     body: UsageRequest,
     db: AsyncSession = Depends(get_db),
+    principal: Annotated[
+        Principal, Depends(require_quickbooks_read)
+    ] = Depends(require_quickbooks_read),
 ) -> UsageEvalResponse:
     """Evaluate account suitability for a proposed usage."""
+    require_realm_access(principal, body.realm_id)
     repo = AccountingRepository(db)
-    account = await repo.get_account_by_quickbooks_id(body.realm_id, body.quickbooks_account_id)
+    account = await repo.get_account_by_quickbooks_id(
+        body.realm_id, body.quickbooks_account_id
+    )
     if account is None:
-        raise HTTPException(status_code=404, detail="Account not found.")
+        raise HTTPException(
+            status_code=404, detail="Account not found."
+        )
 
     service = AccountUsageService()
     result = await service.evaluate(
