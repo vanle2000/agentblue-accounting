@@ -256,6 +256,42 @@ Error responses never expose:
 7. Enable structured JSON logging (`LOG_LEVEL=INFO`)
 8. Set up monitoring for audit events
 
+## Rate Limiting
+
+Basic per-IP rate limiting via `RateLimitMiddleware`:
+
+- Default: 60 requests/minute per IP
+- QuickBooks OAuth endpoints: 10/minute
+- ML model operations: 30/minute
+- Categorization endpoints: 100/minute
+- Returns HTTP 429 with `Retry-After` header
+
+Implementation: in-memory sliding-window counter.
+For production multi-worker deployments, replace with Redis-backed
+rate limiting.
+
+## CLI Authentication
+
+The ML CLI (`python -m agentblue.ml.cli`) requires JWT authentication:
+
+```bash
+python -m agentblue.ml.cli train --dataset-id <id> --realm-id <id> --token <jwt>
+```
+
+Or via environment variable:
+
+```bash
+export AGENTBLUE_CLI_TOKEN=<jwt>
+python -m agentblue.ml.cli train --dataset-id <id> --realm-id <id>
+```
+
+CLI commands enforce the same permission checks as the API:
+- `build-dataset`: requires `ml:dataset:create`
+- `train`: requires `ml:train`
+- `evaluate`: requires `ml:read`
+- `activate-shadow`: requires `ml:shadow:activate`
+- `drift-report`: requires `ml:train`
+
 ## Known Limitations
 
 - **Authentication**: JWT-only; no OAuth2/OIDC integration yet
