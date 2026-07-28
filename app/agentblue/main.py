@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 
+from agentblue.accounting.router import router as accounting_router
 from agentblue.api.health import router as health_router
 from agentblue.categorization.router import (
     router as categorization_router,
@@ -77,6 +78,7 @@ def create_app() -> FastAPI:
     app.include_router(quickbooks_sync_router)
     app.include_router(quickbooks_accounting_router)
     app.include_router(categorization_router)
+    app.include_router(accounting_router)
     app.include_router(ml_router)
 
     return app
