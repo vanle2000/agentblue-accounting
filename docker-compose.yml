@@ -44,6 +44,81 @@ services:
       retries: 3
       start_period: 15s
 
+  # Production-shadow profile — add --profile production-shadow to enable
+  api-shadow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agentblue-api-shadow
+    restart: unless-stopped
+    profiles:
+      - production-shadow
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: production-shadow
+      LOG_LEVEL: WARNING
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-agentblue}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-agentblue}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      ACCOUNTING_EXECUTION_MODE: shadow
+      AUTOMATIC_APPROVAL_ENABLED: "false"
+      AUTONOMOUS_WRITEBACK_ENABLED: "false"
+      ML_PROMOTION_ENABLED: "false"
+      WORKER_ENABLED: "true"
+      RATE_LIMIT_ENABLED: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agentblue-worker
+    restart: unless-stopped
+    profiles:
+      - production-shadow
+    command: ["python", "-m", "agentblue.accounting.worker_runner"]
+    environment:
+      APP_ENV: production-shadow
+      LOG_LEVEL: WARNING
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-agentblue}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-agentblue}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      WORKER_ENABLED: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://api:8000/api/v1/health/live')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+
 volumes:
   agentblue-pgdata:
     name: agentblue-pgdata
