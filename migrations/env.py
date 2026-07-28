@@ -44,6 +44,7 @@ from agentblue.ml.models import (  # noqa: F401
     MlTrainingRun,
 )
 from agentblue.security.models import AuditEvent  # noqa: F401
+from agentblue.security.revocation import RevokedToken  # noqa: F401
 
 # Import all models here so Alembic can detect them.
 target_metadata = Base.metadata
