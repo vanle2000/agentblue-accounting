@@ -7,7 +7,7 @@ permission enforcement, realm isolation, security configuration, and audit.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -485,6 +485,10 @@ class TestAuthenticationDependency:
         self, sample_principal: Principal
     ) -> None:
         """X-Correlation-ID header value is passed through to the principal."""
+        from unittest.mock import AsyncMock
+
+        from agentblue.db.session import get_db
+
         settings = SecuritySettings(jwt_secret_key=SECRET_KEY)
         token = create_access_token(sample_principal, settings)
 
@@ -496,7 +500,15 @@ class TestAuthenticationDependency:
         ) -> dict[str, object]:
             return {"correlation_id": principal.correlation_id}
 
+        async def _mock_db():  # type: ignore[no-untyped-def]
+            session = AsyncMock()
+            result = AsyncMock()
+            result.scalar_one_or_none = MagicMock(return_value=None)
+            session.execute = AsyncMock(return_value=result)
+            yield session
+
         app.dependency_overrides[_get_security_settings] = lambda: settings
+        app.dependency_overrides[get_db] = _mock_db
         transport = ASGITransport(app=app)
         custom_corr = "my-custom-correlation-id-123"
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -515,6 +527,8 @@ class TestAuthenticationDependency:
         self, sample_principal: Principal
     ) -> None:
         """Without X-Correlation-ID header, one is auto-generated."""
+        from agentblue.db.session import get_db
+
         settings = SecuritySettings(jwt_secret_key=SECRET_KEY)
         token = create_access_token(sample_principal, settings)
 
@@ -526,7 +540,15 @@ class TestAuthenticationDependency:
         ) -> dict[str, object]:
             return {"correlation_id": principal.correlation_id}
 
+        async def _mock_db2():  # type: ignore[no-untyped-def]
+            session = AsyncMock()
+            result = AsyncMock()
+            result.scalar_one_or_none = MagicMock(return_value=None)
+            session.execute = AsyncMock(return_value=result)
+            yield session
+
         app.dependency_overrides[_get_security_settings] = lambda: settings
+        app.dependency_overrides[get_db] = _mock_db2
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.get(

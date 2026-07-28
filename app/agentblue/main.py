@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 
+from agentblue.accounting.router import router as accounting_router
 from agentblue.api.health import router as health_router
 from agentblue.categorization.router import (
     router as categorization_router,
@@ -26,6 +27,7 @@ from agentblue.integrations.quickbooks.sync.router import (
 from agentblue.logging import configure_logging
 from agentblue.ml.router import router as ml_router
 from agentblue.security.middleware import CorrelationIDMiddleware
+from agentblue.security.rate_limit import RateLimitMiddleware
 
 
 @asynccontextmanager
@@ -66,6 +68,7 @@ def create_app() -> FastAPI:
 
     # Middleware (order matters — outermost first)
     app.add_middleware(CorrelationIDMiddleware)
+    app.add_middleware(RateLimitMiddleware)
 
     # Public endpoints
     app.include_router(health_router)
@@ -75,6 +78,7 @@ def create_app() -> FastAPI:
     app.include_router(quickbooks_sync_router)
     app.include_router(quickbooks_accounting_router)
     app.include_router(categorization_router)
+    app.include_router(accounting_router)
     app.include_router(ml_router)
 
     return app

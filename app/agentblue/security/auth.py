@@ -2,20 +2,25 @@
 
 Provides get_authenticated_principal as a FastAPI dependency.
 Validates token signature, expiration, issuer, audience.
+Checks server-side token revocation via jti.
 """
 
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from agentblue.db.session import get_db
 from agentblue.security.config import SecuritySettings
 from agentblue.security.principal import Principal
+from agentblue.security.revocation import is_token_revoked
 from agentblue.security.roles import Role
 
 logger = structlog.get_logger(__name__)
@@ -135,22 +140,29 @@ async def get_authenticated_principal(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
     settings: SecuritySettings = Depends(_get_security_settings),
+    db: AsyncSession = Depends(get_db),
 ) -> Principal:
     """FastAPI dependency that resolves the authenticated principal.
 
+    Validates the JWT token, then checks server-side revocation status
+    via the jti claim. This ensures that disabled principals, removed
+    roles, and revoked tokens are enforced even for previously-issued
+    tokens.
+
     In development mode with auth_bypass_enabled, returns a default
-    admin principal.  In production, always requires a valid token.
+    admin principal. In production, always requires a valid token.
 
     Args:
         request: The incoming HTTP request.
         credentials: Bearer token from the Authorization header.
         settings: Security configuration.
+        db: Database session for revocation checks.
 
     Returns:
         The authenticated Principal.
 
     Raises:
-        HTTPException: 401 if authentication fails.
+        HTTPException: 401 if authentication fails or token is revoked.
     """
     # Get or generate correlation ID.
     correlation_id = request.headers.get("X-Correlation-ID", "")
@@ -184,6 +196,23 @@ async def get_authenticated_principal(
 
     token = credentials.credentials
     payload = decode_token(token, settings)
+
+    # Server-side revocation check via jti.
+    jti = payload.get("jti", "")
+    if jti:
+        revoked = await is_token_revoked(db, jti)
+        if revoked:
+            logger.warning(
+                "revoked_token_used",
+                jti=jti,
+                correlation_id=correlation_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
     principal = _payload_to_principal(payload, correlation_id)
 
     logger.info(
@@ -202,6 +231,8 @@ def create_access_token(
 ) -> str:
     """Create a signed JWT access token for a principal.
 
+    Every token includes a unique jti for revocation support.
+
     Args:
         principal: The principal to encode.
         settings: Security configuration.
@@ -209,8 +240,6 @@ def create_access_token(
     Returns:
         A signed JWT string.
     """
-    from datetime import UTC, datetime, timedelta
-
     now = datetime.now(UTC)
     expire = now + timedelta(minutes=settings.jwt_access_token_expire_minutes)
 
