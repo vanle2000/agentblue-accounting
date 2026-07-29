@@ -19,6 +19,7 @@ dependencies = [
     "pandas>=2.2.0,<3.0.0",
     "python-jose[cryptography]>=3.3.0,<4.0.0",
     "passlib[bcrypt]>=1.7.4,<2.0.0",
+    "prometheus-client>=0.20.0,<1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -69,6 +70,7 @@ ignore = [
 "migrations/**" = ["E501", "I001"]
 "app/agentblue/ml/training/**" = ["N803", "N806"]
 "app/agentblue/accounting/models.py" = ["E501"]
+"app/agentblue/observability/dashboards.py" = ["E501"]
 "app/agentblue/ml/features/transformers.py" = ["N806"]
 "app/agentblue/ml/inference/predictor.py" = ["N803", "N806"]
 "tests/unit/test_ml_*.py" = ["N806", "N803", "E501"]
@@ -108,6 +110,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["jose.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["opentelemetry.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
