@@ -88,9 +88,11 @@ class WorkflowTransitionService:
             ValueError: If the transition is invalid.
             PermissionError: If the principal lacks permission.
         """
-        # Fetch work item
+        # Fetch work item with row lock to prevent concurrent state changes
         result = await self._session.execute(
-            select(AccountingWorkItem).where(AccountingWorkItem.id == work_item_id)
+            select(AccountingWorkItem)
+            .where(AccountingWorkItem.id == work_item_id)
+            .with_for_update()
         )
         item = result.scalar_one_or_none()
         if item is None:
