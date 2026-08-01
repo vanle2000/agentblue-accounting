@@ -272,10 +272,17 @@ class TestLifespan:
             patch("agentblue.main.get_settings") as mock_get_settings,
             patch("agentblue.main.configure_logging") as mock_configure,
             patch("agentblue.main.dispose_engine", new_callable=AsyncMock) as mock_dispose,
+            patch("agentblue.main.record_startup_complete"),
+            patch("agentblue.main.APP_INFO"),
         ):
             mock_settings = MagicMock()
             mock_settings.log_level = "INFO"
             mock_settings.is_development = True
+            mock_settings.is_production_shadow = False
+            mock_settings.is_production = False
+            mock_settings.requires_strict_validation = False
+            mock_settings.app_env = "development"
+            mock_settings.accounting_execution_mode = "shadow"
             mock_get_settings.return_value = mock_settings
 
             async with lifespan(mock_app):
@@ -296,10 +303,17 @@ class TestLifespan:
             patch("agentblue.main.get_settings") as mock_get_settings,
             patch("agentblue.main.configure_logging"),
             patch("agentblue.main.dispose_engine", new_callable=AsyncMock) as mock_dispose,
+            patch("agentblue.main.record_startup_complete"),
+            patch("agentblue.main.APP_INFO"),
         ):
             mock_settings = MagicMock()
             mock_settings.log_level = "INFO"
             mock_settings.is_development = True
+            mock_settings.is_production_shadow = False
+            mock_settings.is_production = False
+            mock_settings.requires_strict_validation = False
+            mock_settings.app_env = "development"
+            mock_settings.accounting_execution_mode = "shadow"
             mock_get_settings.return_value = mock_settings
 
             with pytest.raises(RuntimeError, match="boom"):
